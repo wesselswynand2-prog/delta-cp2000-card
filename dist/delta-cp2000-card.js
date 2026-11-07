@@ -13,7 +13,7 @@
  *   2101H (8449)  read   drive status word
  */
 
-const CARD_VERSION = "1.5.0";
+const CARD_VERSION = "1.8.0";
 
 // Hamlet Elektries logo (white, transparent background) — built in so no upload is needed.
 const HAMLET_LOGO =
@@ -121,6 +121,20 @@ const LABELS = {
   min_frequency: "Min Hz",
   max_frequency: "Max Hz",
   step: "Step Hz (▲ / ▼)",
+  setpoint_type: "What do ▲ / ▼ / ENTER set?",
+  p_unit: "Pressure unit",
+  p_min: "Min set pressure",
+  p_max: "Max set pressure",
+  p_step: "Pressure step (▲ / ▼)",
+  p_sensor_max: "Transducer range (full scale)",
+  p_fmax: "Drive max Hz (01-00)",
+  pressure_setpoint: "Set pressure (sensor, optional)",
+  pressure_setpoint_entity: "Set pressure — number / input_number",
+  box1: "Box 1 (right, middle)",
+  box2: "Box 2 (right, bottom)",
+  decimals: "Decimals",
+  unit: "Unit (empty = from entity)",
+  tap: "When tapped",
   status: "Status word (2101H) — required",
   fault: "Fault code (2100H)",
   frequency_command: "Frequency command (2102H)",
@@ -131,7 +145,7 @@ const LABELS = {
   output_power: "Output power (kW)",
   motor_speed: "Motor speed (rpm)",
   igbt_temperature: "IGBT temperature",
-  pid_feedback: "PID feedback / pressure",
+  pid_feedback: "Actual pressure / PID feedback",
   energy: "Energy (kWh)",
   run_hours: "Run hours",
   mode: "How does Home Assistant talk to the drive?",
@@ -184,6 +198,8 @@ function cardMode(config) {
 
 function buildSchema(config) {
   const mode = cardMode(config || {});
+  const pressure = (config || {}).setpoint_type === "pressure";
+  const pUnit = (config || {}).p_unit || "bar";
   const SENS = ["sensor", "number", "input_number"];
   const BIN = ["binary_sensor", "switch", "input_boolean", "sensor"];
   const ent = (name, domain = SENS) => ({ name, selector: { entity: { domain } } });
@@ -214,7 +230,8 @@ function buildSchema(config) {
     ? [ent("status", ["sensor"]), ent("fault", ["sensor"])]
     : [ent("running", BIN), ent("fault", ["binary_sensor", "sensor"]), ent("reverse", BIN), ent("remote", BIN)];
   const readings = ["frequency_command", "output_frequency", "output_current", "output_voltage", "dc_bus_voltage",
-    "output_power", "motor_speed", "igbt_temperature", "pid_feedback", "energy", "run_hours"].map((k) => ent(k));
+    "output_power", "motor_speed", "igbt_temperature", "pid_feedback", ...(pressure && mode === "entities" ? ["pressure_setpoint"] : []),
+    "energy", "run_hours"].map((k) => ent(k));
 
   const control = mode === "modbus"
     ? [{
@@ -228,7 +245,7 @@ function buildSchema(config) {
         ent("run_entity", ["button", "script", "input_button", "switch", "input_boolean"]),
         ent("stop_entity", ["button", "script", "input_button", "switch", "input_boolean"]),
         ent("reset_entity", ["button", "script", "input_button"]),
-        ent("setpoint_entity", ["number", "input_number"]),
+        ...(pressure ? [ent("pressure_setpoint_entity", ["number", "input_number"])] : [ent("setpoint_entity", ["number", "input_number"])]),
         ent("app_control_entity", ["switch", "input_boolean"]),
         { name: "pulse_seconds", selector: { number: { min: 0, max: 10, step: 0.5, mode: "box", unit_of_measurement: "s" } } },
         ent("direction_entity", ["switch", "input_boolean"]),
@@ -245,11 +262,31 @@ function buildSchema(config) {
       ],
     },
     {
+      name: "setpoint_type",
+      selector: { select: { mode: "list", options: [
+        { value: "speed", label: "Speed (Hz) — normal VFD speed control" },
+        { value: "pressure", label: "Pressure (PID) — set pressure, drive regulates speed" },
+      ] } },
+    },
+    ...(pressure ? [{
+      type: "grid",
+      schema: [
+        { name: "p_min", selector: { number: { min: 0, max: 1000, step: 0.1, mode: "box", unit_of_measurement: pUnit } } },
+        { name: "p_max", selector: { number: { min: 0, max: 1000, step: 0.1, mode: "box", unit_of_measurement: pUnit } } },
+        { name: "p_step", selector: { number: { min: 0.01, max: 10, step: 0.01, mode: "box", unit_of_measurement: pUnit } } },
+        { name: "p_unit", selector: { select: { mode: "dropdown", options: ["bar", "kPa", "psi", "m", "%"] } } },
+        ...(mode === "modbus" ? [
+          { name: "p_sensor_max", selector: { number: { min: 0.1, max: 1000, step: 0.1, mode: "box", unit_of_measurement: pUnit } } },
+          { name: "p_fmax", selector: { number: { min: 1, max: 600, step: 0.5, mode: "box", unit_of_measurement: "Hz" } } },
+        ] : []),
+      ],
+    }] : []),
+    {
       type: "grid",
       schema: [
         { name: "min_frequency", selector: { number: { min: 0, max: 600, step: 0.5, mode: "box", unit_of_measurement: "Hz" } } },
         { name: "max_frequency", selector: { number: { min: 1, max: 600, step: 0.5, mode: "box", unit_of_measurement: "Hz" } } },
-        { name: "step", selector: { number: { min: 0.01, max: 10, step: 0.01, mode: "box", unit_of_measurement: "Hz" } } },
+        ...(pressure ? [] : [{ name: "step", selector: { number: { min: 0.01, max: 10, step: 0.01, mode: "box", unit_of_measurement: "Hz" } } }]),
       ],
     },
     {
@@ -266,6 +303,32 @@ function buildSchema(config) {
       expanded: true,
       schema: control,
     },
+    ...(pressure ? [{
+      type: "expandable",
+      name: "boxes",
+      title: "Pump screen: boxes on the right",
+      schema: ["box1", "box2"].map((b, i) => ({
+        type: "expandable",
+        name: b,
+        title: i === 0 ? "Box 1 (under PRESENT VALUE)" : "Box 2 (bottom right)",
+        schema: [
+          { name: "entity", selector: { entity: {} } },
+          {
+            type: "grid",
+            schema: [
+              { name: "label", selector: { text: {} } },
+              { name: "unit", selector: { text: {} } },
+              { name: "decimals", selector: { number: { min: 0, max: 3, mode: "box" } } },
+              { name: "tap", selector: { select: { mode: "dropdown", options: [
+                { value: "more_info", label: "Show details / history" },
+                { value: "toggle", label: "Toggle (switches, valves…)" },
+                { value: "none", label: "Nothing" },
+              ] } } },
+            ],
+          },
+        ],
+      })),
+    }] : []),
     {
       type: "expandable",
       name: "keys",
@@ -305,7 +368,7 @@ class DeltaCP2000CardEditor extends HTMLElement {
       this._form.addEventListener("value-changed", (ev) => {
         ev.stopPropagation();
         const config = ev.detail.value;
-        const modeChanged = config.mode !== this._config.mode;
+        const modeChanged = config.mode !== this._config.mode || config.setpoint_type !== this._config.setpoint_type || config.p_unit !== this._config.p_unit;
         this._config = config;
         if (modeChanged) this._form.schema = buildSchema(config);
         this.dispatchEvent(new CustomEvent("config-changed", { detail: { config }, bubbles: true, composed: true }));
@@ -373,6 +436,13 @@ class DeltaCP2000Card extends HTMLElement {
       show_controls: true,
       allow_reverse: false,
       confirm_actions: true,
+      ...config,
+      setpoint_type: "speed",
+      p_unit: "bar",
+      p_min: 0,
+      p_max: 10,
+      p_step: 0.1,
+      p_sensor_max: 10,
       ...config,
       mode: cardMode(config),
       default_page: PAGES.includes(dp) ? dp : "main",
@@ -451,7 +521,7 @@ class DeltaCP2000Card extends HTMLElement {
   _canControl(kind) {
     const c = this._config.control;
     const mb = this._isModbus();
-    if (kind === "setpoint") return !!c.setpoint_entity || mb;
+    if (kind === "setpoint") return this._isPressure() ? !!c.pressure_setpoint_entity || mb : !!c.setpoint_entity || mb;
     if (kind === "fwd" || kind === "rev") return !!c.direction_entity || mb;
     if (kind === "stop") return !!c.stop_entity || this._switchLike(c.run_entity) || mb;
     return !!c[`${kind}_entity`] || mb;
@@ -543,26 +613,78 @@ class DeltaCP2000Card extends HTMLElement {
     return this._config.mode === "entities" && !!this._config.control.app_control_entity && !this._appOn();
   }
 
+  /* ---- pressure (PID) helpers ---- */
+  _isPressure() {
+    return this._config.setpoint_type === "pressure";
+  }
+
+  _fmax() {
+    const v = Number(this._config.p_fmax);
+    return Number.isFinite(v) && v > 0 ? v : this._config.max_frequency;
+  }
+
+  // Modbus PID: the CP2000 takes its PID target from the frequency command (08-65 = 0),
+  // where 01-00 max Hz = 100 % = transducer full scale.
+  _hzToP(hz) {
+    return hz === null ? null : (hz / this._fmax()) * Number(this._config.p_sensor_max);
+  }
+
+  _pToHz(p) {
+    return (p / Number(this._config.p_sensor_max)) * this._fmax();
+  }
+
+  _pressureNow() {
+    const v = this._num("pid_feedback");
+    if (v === null) return null;
+    return this._unit("pid_feedback", "%") === "%" && this._config.p_unit !== "%" ? (v * Number(this._config.p_sensor_max)) / 100 : v;
+  }
+
+  _spDecimals() {
+    if (!this._isPressure()) return 2;
+    const st = String(this._config.p_step);
+    return Math.min(3, Math.max(1, st.includes(".") ? st.split(".")[1].length : 0));
+  }
+
+  // setpoint as the drive / HA currently has it (Hz or pressure)
+  _spReading() {
+    const c = this._config.control;
+    const fromEnt = (id) => {
+      const st = id && this._hass.states[id];
+      const v = st ? parseFloat(st.state) : NaN;
+      return Number.isFinite(v) ? v : null;
+    };
+    if (this._isPressure()) {
+      if (c.pressure_setpoint_entity) return fromEnt(c.pressure_setpoint_entity);
+      if (this._config.entities.pressure_setpoint) return this._num("pressure_setpoint");
+      return this._hzToP(this._num("frequency_command"));
+    }
+    if (c.setpoint_entity) return fromEnt(c.setpoint_entity);
+    return this._num("frequency_command");
+  }
+
   async _sendSetpoint(hz = this._sp) {
     if (hz === null || hz === undefined) return;
     const c = this._config.control;
+    const pressure = this._isPressure();
     if (this._appBlocked()) {
       this._toast(`${this._config.name}: APP CONTROL is off — switch it on first`);
       return;
     }
     if (!this._canControl("setpoint")) {
-      this._toast(`${this._config.name}: no speed control set up`);
+      this._toast(`${this._config.name}: no ${pressure ? "pressure" : "speed"} control set up — see Control in the card settings`);
       return;
     }
     this._sp = hz;
     try {
-      if (c.setpoint_entity) {
-        const domain = c.setpoint_entity.split(".")[0];
-        await this._hass.callService(domain, "set_value", { entity_id: c.setpoint_entity, value: hz });
+      const ent = pressure ? c.pressure_setpoint_entity : c.setpoint_entity;
+      if (ent) {
+        await this._hass.callService(ent.split(".")[0], "set_value", { entity_id: ent, value: hz });
       } else {
-        await this._writeRegister(8193, Math.round(hz * 100));
+        await this._writeRegister(8193, Math.round((pressure ? this._pToHz(hz) : hz) * 100));
       }
-      this._toast(`${this._config.name}: speed set to ${hz.toFixed(2)} Hz`);
+      this._toast(pressure
+        ? `${this._config.name}: pressure set to ${hz.toFixed(this._spDecimals())} ${this._config.p_unit}`
+        : `${this._config.name}: speed set to ${hz.toFixed(2)} Hz`);
       this._spSentAt = Date.now();
     } catch (e) {
       this._toast(`${this._config.name}: setpoint failed — ${e.message || e}`);
@@ -586,24 +708,21 @@ class DeltaCP2000Card extends HTMLElement {
     }, 3000);
   }
 
-  _clamp(hz) {
-    const { min_frequency: lo, max_frequency: hi } = this._config;
-    return Math.round(Math.min(hi, Math.max(lo, hz)) * 100) / 100;
+  _clamp(v) {
+    const p = this._isPressure();
+    const lo = Number(p ? this._config.p_min : this._config.min_frequency);
+    const hi = Number(p ? this._config.p_max : this._config.max_frequency);
+    return Math.round(Math.min(hi, Math.max(lo, v)) * 1000) / 1000;
   }
 
   _currentSetpoint() {
     if (this._sp !== null) return this._sp;
-    const c = this._config.control;
-    if (c.setpoint_entity && this._hass.states[c.setpoint_entity]) {
-      const v = parseFloat(this._hass.states[c.setpoint_entity].state);
-      if (Number.isFinite(v)) return v;
-    }
-    const f = this._num("frequency_command");
-    return f === null ? this._config.min_frequency : f;
+    const r = this._spReading();
+    return r === null ? Number(this._isPressure() ? this._config.p_min : this._config.min_frequency) : r;
   }
 
   _nudge(dir) {
-    const { step } = this._config;
+    const step = Number(this._isPressure() ? this._config.p_step : this._config.step) || 0.1;
     if (!this._config.show_controls || !this._canControl("setpoint")) {
       this._turnPage(dir > 0 ? -1 : 1);
       return;
@@ -634,7 +753,7 @@ class DeltaCP2000Card extends HTMLElement {
     if (k.label) return String(k.label);
     const f = k.function;
     if (f && f.startsWith("page_")) return { page_main: "MAIN", page_power: "POWR", page_motor: "MOTR", page_info: "INFO", page_all: "ALL" }[f];
-    if (f === "preset") return k.value !== undefined ? `${k.value}Hz` : "PRSET";
+    if (f === "preset") return k.value !== undefined ? (this._isPressure() ? `${k.value}` : `${k.value}Hz`) : "PRSET";
     if (["run", "stop", "fwd", "rev"].includes(f)) return f.toUpperCase();
     if (f === "reset") return "RST";
     if (k.entity && this._hass && this._hass.states[k.entity]) {
@@ -653,7 +772,10 @@ class DeltaCP2000Card extends HTMLElement {
       const s = this._hass.states[k.entity];
       return !!s && ["on", "open", "home", "heat", "playing", "active"].includes(s.state);
     }
-    if (f === "preset") return this._num("frequency_command") !== null && Math.abs(this._num("frequency_command") - Number(k.value)) < 0.011;
+    if (f === "preset") {
+      const r = this._spReading();
+      return r !== null && Math.abs(r - Number(k.value)) < (this._isPressure() ? Number(this._config.p_step) / 2 : 0.011);
+    }
     return false;
   }
 
@@ -796,6 +918,10 @@ class DeltaCP2000Card extends HTMLElement {
       if (el) el.addEventListener("click", () => fn(el));
     };
     root.getElementById("screen").addEventListener("click", (ev) => {
+      const bx = ev.target.closest("[data-box]");
+      if (bx) return this._tapBox(bx.dataset.box);
+      const sk = ev.target.closest("[data-soft]");
+      if (sk) return this._doKey(sk.dataset.soft, root.querySelector(`.fk[data-key="${sk.dataset.soft}"]`));
       const k = ev.target.closest("[data-ent]");
       if (k) this._moreInfo(k.dataset.ent);
     });
@@ -841,6 +967,15 @@ class DeltaCP2000Card extends HTMLElement {
       this._confirmThen(b, () => this._command(this._dirNext || "rev"));
     });
     this._built = true;
+  }
+
+  _tapBox(b) {
+    const cfg = this._config;
+    const bc = (cfg.boxes && cfg.boxes[b]) || {};
+    const id = bc.entity || (b === "box1" && !cfg.boxes ? cfg.entities.output_power : null);
+    if (!id || bc.tap === "none") return;
+    if (bc.tap === "toggle") this._hass.callService("homeassistant", "toggle", { entity_id: id });
+    else this._moreInfo(id);
   }
 
   _line(key, label, value, unit, opts = {}) {
@@ -941,10 +1076,16 @@ class DeltaCP2000Card extends HTMLElement {
     }
 
     // setpoint state
-    if (this._sp !== null && this._spSentAt && fcmd !== null && Math.abs(fcmd - this._sp) < 0.011) this._sp = null;
+    const pressure = this._isPressure();
+    const spRead = this._spReading();
+    const tol = pressure ? Math.max(0.005, Number(cfg.p_step) / 2) : 0.011;
+    if (this._sp !== null && this._spSentAt && spRead !== null && Math.abs(spRead - this._sp) < tol) this._sp = null;
     if (this._sp !== null && this._spSentAt && Date.now() - this._spSentAt > 15000) this._sp = null;
     const editing = this._sp !== null && !this._spSentAt;
-    const spShown = this._sp !== null ? this._sp : fcmd;
+    const spShown = this._sp !== null ? this._sp : spRead;
+    const pNow = pressure ? this._pressureNow() : null;
+    if (pressure && sw === null && mode === "HA") mode = "PID";
+    else if (pressure) mode += " PID";
 
     // LCD title + softkeys
     set("t_mode", mode);
@@ -957,6 +1098,7 @@ class DeltaCP2000Card extends HTMLElement {
       el.classList.toggle("act", this._keyActive(k));
     }
     $("lcd").classList.toggle("off", commsLost);
+    $("lcd").classList.toggle("full", !commsLost && !faulted && this._page === "main" && pressure);
 
     // LCD body
     let html = "";
@@ -968,6 +1110,47 @@ class DeltaCP2000Card extends HTMLElement {
       html = `<div class="msg fault"><div class="mbig">${fl ? fl[0] : "FAULT"}</div>
         <div>${desc}</div>
         <div class="small">${fcode > 0 ? `Code ${fcode} · ` : ""}press STOP/RESET</div></div>`;
+    } else if (this._page === "main" && pressure) {
+      // Pump / PID screen: SETPOINT | PRESENT VALUE boxes like the drive's own pump display
+      const dp = this._spDecimals();
+      const u = this._esc_(cfg.p_unit.charAt(0).toUpperCase() + cfg.p_unit.slice(1));
+      const spKey = cfg.control.pressure_setpoint_entity ? "" : cfg.entities.pressure_setpoint ? "pressure_setpoint" : "frequency_command";
+      const de = (k) => (k && cfg.entities[k] ? `data-ent="${k}"` : "");
+      const box = (b, area) => {
+        const bc = (cfg.boxes && cfg.boxes[b]) || {};
+        // default: Box 1 shows output power when nothing is chosen
+        const id = bc.entity || (b === "box1" && !cfg.boxes ? cfg.entities.output_power : null);
+        if (!id) return `<div class="pc box ${area}"></div>`;
+        const st = this._hass.states[id];
+        let val = "—", unit = bc.unit || "";
+        if (st && !["unavailable", "unknown"].includes(st.state)) {
+          const num = parseFloat(st.state);
+          if (Number.isFinite(num) && /^-?[\d.]+(e-?\d+)?$/i.test(String(st.state).trim())) {
+            const d = bc.decimals !== undefined && bc.decimals !== null && bc.decimals !== "" ? Number(bc.decimals) : Math.abs(num) >= 100 ? 0 : 1;
+            val = num.toFixed(d);
+            if (!bc.unit) unit = st.attributes.unit_of_measurement || "";
+          } else {
+            val = String(st.state).toUpperCase();
+          }
+        }
+        const label = bc.label !== undefined ? bc.label : (st && st.attributes.friendly_name) || "";
+        const on = st && ["on", "open", "running"].includes(st.state);
+        return `<div class="pc box ${area} ${on ? "on" : ""}" data-box="${b}">
+          ${label ? `<span class="bl">${this._esc_(label)}</span>` : ""}
+          <span class="bv"><span class="v">${this._esc_(val)}</span><span class="u">${this._esc_(unit)}</span></span></div>`;
+      };
+      const soft = ["f2", "f3", "f4"].map((k) =>
+        `<div class="pf ${this._keyActive(k) ? "act" : ""}" data-soft="${k}">${this._esc_(this._keyLabel(k))}</div>`).join("");
+      html = `<div class="pidlcd">
+        <div class="ph l">SETPOINT</div><div class="ph tag">F1</div><div class="ph r">PRESENT VALUE</div>
+        <div class="pc sp ${editing ? "blink" : ""}" ${de(spKey)}><span class="v">${f(spShown, 2 > dp ? 2 : dp)}</span><span class="u">${u}</span></div>
+        <div class="pc pv" ${de("pid_feedback")}><span class="v">${f(pNow, 2 > dp ? 2 : dp)}</span><span class="u">${u}</span></div>
+        <div class="pc hz" ${de("output_frequency")}><span class="v">${f(hz, 2)}</span><span class="u">Hz</span></div>
+        ${box("box1", "small")}
+        <div class="pc amp" ${de("output_current")}><span class="v">${f(n("output_current"), 1)}</span><span class="u">A</span></div>
+        ${box("box2", "blank")}
+        <div class="pfoot"><div class="pf st">${running ? (reverse ? "REV RUN" : "RUN") : "STOP"}</div>${soft}</div>
+      </div>`;
     } else if (this._page === "main") {
       const span = Math.max(0.01, cfg.max_frequency - cfg.min_frequency);
       const pct = (v) => Math.max(0, Math.min(100, ((v - cfg.min_frequency) / span) * 100));
@@ -1112,6 +1295,48 @@ class DeltaCP2000Card extends HTMLElement {
       .softbar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; padding: 0 3px 3px; font-size: 11px; }
       .softbar span { text-align: center; border: 1.5px solid var(--lcd-ink); border-radius: 2px; padding: 1px 2px; cursor: pointer; overflow: hidden; white-space: nowrap; text-overflow: clip; max-width: 100%; }
       .softbar span.act { background: var(--lcd-ink); color: var(--lcd-back2); }
+
+      /* ---------- pump / PID screen ---------- */
+      .lcd.full .top, .lcd.full .softbar { display: none; }
+      .lcd.full .screen { padding: 0; }
+      .pidlcd {
+        display: grid; grid-template-columns: 1fr 26px 1.08fr; height: 100%; min-height: 168px;
+        grid-template-rows: 22px 1fr 1fr 1fr 22px;
+        grid-template-areas: "hl tag hr" "sp sp pv" "hz hz sm" "am am bl" "ft ft ft";
+        border: 2px solid var(--lcd-ink); font-weight: 400; line-height: 1;
+      }
+      .pidlcd > div { border: 1.5px solid var(--lcd-ink); margin: -1px 0 0 -1px; min-width: 0; overflow: hidden; }
+      .pidlcd .ph { font-size: 15px; font-weight: 700; display: flex; align-items: center; padding: 0 4px; letter-spacing: .5px; white-space: nowrap; }
+      .pidlcd .ph.l { grid-area: hl; }
+      .pidlcd .ph.tag { grid-area: tag; justify-content: center; font-size: 11px; }
+      .pidlcd .ph.r { grid-area: hr; border-left-width: 3px; }
+      .pidlcd .pc { display: flex; align-items: center; justify-content: flex-end; gap: 4px; padding: 0 6px; cursor: pointer; }
+      .pidlcd .pc .v { font-size: 30px; letter-spacing: 2px; white-space: nowrap; }
+      .pidlcd .pc .u { font-size: 18px; min-width: 22px; }
+      .pidlcd .sp { grid-area: sp; }
+      .pidlcd .sp .u { font-size: 13px; font-weight: 700; }
+      .pidlcd .pv { grid-area: pv; border-left-width: 3px; }
+      .pidlcd .pv .v { font-size: 32px; }
+      .pidlcd .pv .u { font-size: 24px; }
+      .pidlcd .hz { grid-area: hz; }
+      .pidlcd .hz .v, .pidlcd .amp .v { font-size: 32px; }
+      .pidlcd .hz .u, .pidlcd .amp .u { font-size: 26px; }
+      .pidlcd .amp { grid-area: am; }
+      .pidlcd .small { grid-area: sm; border-left-width: 3px; }
+      .pidlcd .blank { grid-area: bl; border-left-width: 3px; }
+      .pidlcd .box { position: relative; justify-content: flex-end; align-items: flex-end; padding: 0 6px 4px; }
+      .pidlcd .box .bl { position: absolute; top: 3px; left: 5px; font-size: 11px; font-weight: 700; letter-spacing: .3px; white-space: nowrap; max-width: calc(100% - 10px); overflow: hidden; text-overflow: ellipsis; }
+      .pidlcd .box .bv { display: flex; align-items: baseline; gap: 4px; }
+      .pidlcd .box .v { font-size: 24px; }
+      .pidlcd .box .u { font-size: 14px; min-width: 0; }
+      .pidlcd .box.on { background: var(--lcd-ink); color: var(--lcd-back2); }
+      .pidlcd .pf { font-size: 13px; font-weight: 700; display: flex; align-items: center; justify-content: center; white-space: nowrap; cursor: pointer; padding: 0 2px; }
+      .pidlcd .pfoot { grid-area: ft; display: grid; grid-template-columns: repeat(4, 1fr); padding: 0; }
+      .pidlcd .pfoot > .pf { border-left: 1.5px solid var(--lcd-ink); }
+      .pidlcd .pfoot > .pf:first-child { border-left: none; }
+      .pidlcd .pf.st { justify-content: flex-start; padding-left: 4px; cursor: default; }
+      .pidlcd .pf.act { background: var(--lcd-ink); color: var(--lcd-back2); }
+      .pidlcd .blink .v { animation: lcdblink 1s steps(1) infinite; }
 
       /* ---------- keys (general) ---------- */
       button { font: inherit; cursor: pointer; border: none; padding: 0; -webkit-tap-highlight-color: transparent; transition: transform .05s, filter .2s; }

@@ -154,6 +154,37 @@ control:
 
 Accent colour follows the theme variable `--hamlet-accent` (default blue).
 
+## Pressure (PID) mode — irrigation / constant pressure
+
+Set **"What do ▲ / ▼ / ENTER set?"** to **Pressure (PID)** in the card editor. Then:
+
+- The LCD main page shows **SP** (set pressure), **Pr** (actual pressure, big) and **H** (drive Hz), with a bar for actual pressure vs set pressure
+- ▲ / ▼ change the set pressure in steps (`p_step`), **ENTER** sends it
+- Preset keys (F1–F4) send a set **pressure** instead of Hz, e.g. `f3: { label: 3BAR, function: preset, value: 3 }`
+
+| Option | Default | |
+|---|---|---|
+| `setpoint_type` | `speed` | `speed` or `pressure` |
+| `p_unit` | `bar` | bar / kPa / psi / m / % |
+| `p_min` / `p_max` / `p_step` | 0 / 10 / 0.1 | Limits and step for the set pressure |
+| `p_sensor_max` | 10 | **Modbus mode:** transducer full scale (e.g. 0–10 bar → 10) |
+| `p_fmax` | = Max Hz | **Modbus mode:** drive parameter 01-00 (max output Hz) |
+| `control.pressure_setpoint_entity` | – | **Entities mode:** number / input_number that holds the set pressure |
+| `entities.pid_feedback` | – | Actual pressure. A `%` sensor (Modbus 220AH) is converted with `p_sensor_max` |
+
+**Boxes on the pump screen:** the two boxes on the right (under PRESENT VALUE) can show anything — flow, tank level, a valve, a second pressure… Set them in the editor under *Pump screen: boxes on the right*:
+
+```yaml
+boxes:
+  box1: { entity: sensor.irrigation_flow, label: FLOW, decimals: 1 }
+  box2: { entity: switch.zone_1_valve, label: ZONE 1, tap: toggle }
+```
+
+Numbers are shown with their unit, on/off entities show ON/OFF (box goes dark when on), text sensors show their text. `tap`: `more_info` (default), `toggle` or `none`. If no boxes are set, Box 1 shows kW.
+
+**Modbus mode — drive settings for PID from the card:** the CP2000 takes its PID target from the frequency command, where 01-00 (max Hz) = 100 % = transducer full scale. So the card writes `set pressure ÷ p_sensor_max × 01-00` to 2001H.
+Set **08-00** to your PID feedback input (e.g. ACI/AVI), **08-65 = 0** (PID target from the frequency command), **00-20 = 1** (RS-485). Check these against your drive manual on first install, and compare the card's pressure with the keypad.
+
 ## Assignable keys (F1–F4, MENU, HAND, AUTO)
 
 Set them in the card editor under **Keys**, or in YAML. The label is what shows on the LCD above the key (keep it to 5 letters).
