@@ -13,7 +13,7 @@
  *   2101H (8449)  read   drive status word
  */
 
-const CARD_VERSION = "1.4.0";
+const CARD_VERSION = "1.5.0";
 
 // Hamlet Elektries logo (white, transparent background) — built in so no upload is needed.
 const HAMLET_LOGO =
@@ -141,8 +141,10 @@ const LABELS = {
   direction_entity: "Direction switch (on = REV)",
   hub: "Modbus hub name",
   slave: "Drive Modbus address (09-00)",
-  run_entity: "RUN — button, script or switch",
-  stop_entity: "STOP — button or script (empty = switch off RUN switch)",
+  run_entity: "START — switch, button or script (switch is turned ON)",
+  stop_entity: "STOP — switch, button or script (switch is turned ON; empty = turn START switch OFF)",
+  app_control_entity: "APP CONTROL — switch / input_boolean (middle key)",
+  pulse_seconds: "Pulse switches (s) — 0 = stay on, e.g. 1 = push-button pulse",
   reset_entity: "RESET — button or script",
   setpoint_entity: "Speed setpoint — number / input_number (Hz)",
   show_controls: "Show RUN / STOP / speed keys",
@@ -224,9 +226,11 @@ function buildSchema(config) {
       }]
     : [
         ent("run_entity", ["button", "script", "input_button", "switch", "input_boolean"]),
-        ent("stop_entity", ["button", "script", "input_button"]),
+        ent("stop_entity", ["button", "script", "input_button", "switch", "input_boolean"]),
         ent("reset_entity", ["button", "script", "input_button"]),
         ent("setpoint_entity", ["number", "input_number"]),
+        ent("app_control_entity", ["switch", "input_boolean"]),
+        { name: "pulse_seconds", selector: { number: { min: 0, max: 10, step: 0.5, mode: "box", unit_of_measurement: "s" } } },
         ent("direction_entity", ["switch", "input_boolean"]),
       ];
 
@@ -484,13 +488,19 @@ class DeltaCP2000Card extends HTMLElement {
       this._toast(`${this._config.name}: ${kind.toUpperCase()} not set up — add it under Control in the card settings`);
       return;
     }
+    if (kind !== "stop" && this._appBlocked()) {
+      this._toast(`${this._config.name}: APP CONTROL is off — switch it on first`);
+      return;
+    }
     const mb = this._isModbus();
     try {
       if (kind === "run") {
-        if (c.run_entity) await this._pressEntity(c.run_entity, true);
+        if (this._switchLike(c.run_entity)) await this._switchOn(c.run_entity, c.stop_entity && this._switchLike(c.stop_entity) && !this._pulse() ? c.stop_entity : null);
+        else if (c.run_entity) await this._pressEntity(c.run_entity, true);
         else if (mb) await this._writeRegister(8192, 0x0002);
       } else if (kind === "stop") {
-        if (c.stop_entity) await this._pressEntity(c.stop_entity, false);
+        if (this._switchLike(c.stop_entity)) await this._switchOn(c.stop_entity, this._switchLike(c.run_entity) && !this._pulse() ? c.run_entity : null);
+        else if (c.stop_entity) await this._pressEntity(c.stop_entity, false);
         else if (this._switchLike(c.run_entity)) await this._hass.callService("homeassistant", "turn_off", { entity_id: c.run_entity });
         else if (mb) await this._writeRegister(8192, 0x0001);
       } else if (kind === "reset") {
@@ -507,9 +517,39 @@ class DeltaCP2000Card extends HTMLElement {
     }
   }
 
+  _pulse() {
+    const p = Number(this._config.control.pulse_seconds);
+    return Number.isFinite(p) && p > 0 ? p : 0;
+  }
+
+  // Turn a start/stop switch on. With pulse_seconds it is switched off again after the pulse
+  // (like pressing a push button wired to the drive's DI terminals). Without a pulse, the
+  // opposite switch is switched off so START and STOP are never both on.
+  async _switchOn(entityId, opposite) {
+    if (opposite) await this._hass.callService("homeassistant", "turn_off", { entity_id: opposite });
+    await this._hass.callService("homeassistant", "turn_on", { entity_id: entityId });
+    const p = this._pulse();
+    if (p) setTimeout(() => this._hass.callService("homeassistant", "turn_off", { entity_id: entityId }), p * 1000);
+  }
+
+  _appOn() {
+    const id = this._config.control.app_control_entity;
+    const s = id && this._hass ? this._hass.states[id] : null;
+    return !!s && s.state === "on";
+  }
+
+  // In entities mode with an APP CONTROL switch: only allow RUN / speed / reset while it is on.
+  _appBlocked() {
+    return this._config.mode === "entities" && !!this._config.control.app_control_entity && !this._appOn();
+  }
+
   async _sendSetpoint(hz = this._sp) {
     if (hz === null || hz === undefined) return;
     const c = this._config.control;
+    if (this._appBlocked()) {
+      this._toast(`${this._config.name}: APP CONTROL is off — switch it on first`);
+      return;
+    }
     if (!this._canControl("setpoint")) {
       this._toast(`${this._config.name}: no speed control set up`);
       return;
@@ -680,7 +720,8 @@ class DeltaCP2000Card extends HTMLElement {
     const brand = hideLogo
       ? `<div class="brand">${this._esc_(cfg.brand || "")}</div>`
       : `<img class="logo" src="${cfg.logo ? this._esc_(cfg.logo) : HAMLET_LOGO}" alt="Hamlet Elektries">`;
-    const showRow = cfg.show_controls && ["run", "stop", "reset"].some((k) => this._canControl(k));
+    const entMode = cfg.mode === "entities";
+    const showRow = cfg.show_controls && (entMode || ["run", "stop", "reset"].some((k) => this._canControl(k)));
 
     this.shadowRoot.innerHTML = `
       <style>${this._css()}</style>
@@ -741,7 +782,9 @@ class DeltaCP2000Card extends HTMLElement {
           <div class="minileds"><i id="ml_run"></i><i id="ml_dir"></i><i id="ml_stop"></i></div>
           <div class="runrow">
             <button class="runkey" id="b_run">RUN</button>
-            <button class="fwdrev" id="b_dir"><span class="fw">FWD</span><span class="rv">REV</span></button>
+            ${entMode
+              ? `<button class="appkey" id="b_app">APP<br>CONTROL</button>`
+              : `<button class="fwdrev" id="b_dir"><span class="fw">FWD</span><span class="rv">REV</span></button>`}
             <button class="stopkey" id="b_stop">STOP<br>RESET</button>
           </div>` : ""}
         </div>
@@ -776,6 +819,19 @@ class DeltaCP2000Card extends HTMLElement {
       // Like the real STOP/RESET key: stops when running, resets when tripped.
       if (this._faulted) this._confirmThen(b, () => this._command("reset"));
       else this._command("stop"); // stop never needs confirmation
+    });
+    on("b_app", (b) => {
+      const id = this._config.control.app_control_entity;
+      if (!id) {
+        this._toast("APP CONTROL: pick a switch for it under Control in the card settings");
+        return;
+      }
+      this._confirmThen(b, () => {
+        const wasOn = this._appOn();
+        return this._hass.callService("homeassistant", "toggle", { entity_id: id })
+          .then(() => this._toast(`${this._config.name}: APP CONTROL ${wasOn ? "OFF" : "ON"}`))
+          .catch((e) => this._toast(`APP CONTROL failed — ${e.message || e}`));
+      });
     });
     on("b_dir", (b) => {
       if (!this._config.allow_reverse) {
@@ -880,7 +936,7 @@ class DeltaCP2000Card extends HTMLElement {
     $("led_run").className = running ? (run === 1 ? "on green blinkled" : "on green") : "";
     if ($("ml_run")) {
       $("ml_run").className = running ? "on green" : "";
-      $("ml_dir").className = !commsLost && reverse ? "on amber" : "";
+      $("ml_dir").className = $("b_app") ? (this._appOn() ? "on green" : "") : !commsLost && reverse ? "on amber" : "";
       $("ml_stop").className = !commsLost && !running ? "on red" : "";
     }
 
@@ -957,6 +1013,7 @@ class DeltaCP2000Card extends HTMLElement {
     this._dirNext = reverse ? "fwd" : "rev";
     $("k_enter").classList.toggle("ready", editing);
     if ($("b_dir")) $("b_dir").classList.toggle("isrev", reverse);
+    if ($("b_app")) $("b_app").classList.toggle("on", this._appOn());
     if ($("b_run")) $("b_run").classList.toggle("lit", running && !faulted);
     if ($("b_stop")) $("b_stop").classList.toggle("attn", faulted);
     for (const k of ["menu", "hand", "auto"]) {
@@ -1138,6 +1195,16 @@ class DeltaCP2000Card extends HTMLElement {
         box-shadow: inset 0 2px 0 rgba(255,255,255,.25), 0 4px 6px rgba(0,0,0,.55);
       }
       .fwdrev .fw { justify-self: start; align-self: center; }
+      .appkey {
+        height: 48px; border-radius: 6px; color: #e6e9ee; font-size: 14px; font-weight: 700; line-height: 1.05; letter-spacing: .3px;
+        font-family: "Arial Narrow", "Roboto Condensed", Arial, sans-serif; text-shadow: 0 1px 1px rgba(0,0,0,.4);
+        background: linear-gradient(180deg, #6b7079, #4b5058 60%, #3d4148);
+        box-shadow: inset 0 2px 0 rgba(255,255,255,.2), inset 0 -3px 0 rgba(0,0,0,.2), 0 4px 6px rgba(0,0,0,.55);
+      }
+      .appkey.on {
+        color: #fff; background: linear-gradient(180deg, #6dd6fa 0%, #33b2e6 55%, #1f9ad3 100%);
+        box-shadow: 0 0 0 3px #e9f8ff, 0 0 14px #6dd6fa;
+      }
       .fwdrev .rv { justify-self: end; align-self: center; }
     `;
   }

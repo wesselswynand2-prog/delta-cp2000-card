@@ -50,8 +50,10 @@ Use sensors, switches and scripts you **already have** in Home Assistant, e.g. f
 | `entities.reverse` | binary_sensor / switch | on = reverse |
 | `entities.remote` | binary_sensor | on = remote/AUTO (shown on the LCD) |
 | other readings (A, V, kW, rpm, pressure, kWh…) | sensor | as in Modbus mode |
-| `control.run_entity` | button / script / **switch** | RUN. If it's a switch and there's no stop entity, STOP switches it off |
-| `control.stop_entity` | button / script | STOP |
+| `control.run_entity` | **switch** / button / script | START — a switch is turned **on** |
+| `control.stop_entity` | **switch** / button / script | STOP — a switch is turned **on** (and START off). Empty = STOP turns the START switch off |
+| `control.app_control_entity` | switch / input_boolean | Middle **APP CONTROL** key toggles it. While it is **off**, RUN / speed / reset from the card are blocked (STOP always works) |
+| `control.pulse_seconds` | number | `0` = switches stay on. e.g. `1` = START/STOP switches are switched off again after 1 s (push-button pulse to the drive's DI terminals) |
 | `control.reset_entity` | button / script | STOP/RESET when faulted |
 | `control.setpoint_entity` | number / input_number | Speed (Hz) set with ▲ ▼ ENTER and preset keys |
 | `control.direction_entity` | switch / input_boolean | on = REV |
@@ -67,11 +69,15 @@ entities:
   output_current: sensor.borehole_amps
   pid_feedback: sensor.borehole_pressure
 control:
-  run_entity: switch.borehole_pump
+  run_entity: switch.borehole_start
+  stop_entity: switch.borehole_stop
+  app_control_entity: switch.borehole_app_control
   setpoint_entity: number.borehole_speed
 ```
 
-Anything left empty is hidden or shows "—". The RUN/STOP row only appears when at least one control is set.
+In entities mode the bottom row is **RUN · APP CONTROL · STOP/RESET** (in Modbus mode the middle key is FWD/REV).
+
+Anything left empty shows "—"; a key with nothing assigned tells you so when tapped.
 
 ## 1. Install the card (HACS)
 
