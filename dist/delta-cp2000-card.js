@@ -13,7 +13,7 @@
  *   2101H (8449)  read   drive status word
  */
 
-const CARD_VERSION = "1.8.0";
+const CARD_VERSION = "1.8.1";
 
 // Hamlet Elektries logo (white, transparent background) — built in so no upload is needed.
 const HAMLET_LOGO =
@@ -240,7 +240,10 @@ function buildSchema(config) {
           { name: "hub", selector: { text: {} } },
           { name: "slave", selector: { number: { min: 1, max: 254, mode: "box" } } },
         ],
-      }]
+      },
+      ent("app_control_entity", ["switch", "input_boolean"]),
+      ent("run_entity", ["button", "script", "input_button", "switch", "input_boolean"]),
+      ent("stop_entity", ["button", "script", "input_button", "switch", "input_boolean"])]
     : [
         ent("run_entity", ["button", "script", "input_button", "switch", "input_boolean"]),
         ent("stop_entity", ["button", "script", "input_button", "switch", "input_boolean"]),
@@ -565,11 +568,12 @@ class DeltaCP2000Card extends HTMLElement {
     const mb = this._isModbus();
     try {
       if (kind === "run") {
-        if (this._switchLike(c.run_entity)) await this._switchOn(c.run_entity, c.stop_entity && this._switchLike(c.stop_entity) && !this._pulse() ? c.stop_entity : null);
+        if (this._switchLike(c.run_entity)) await this._switchOn(c.run_entity, c.stop_entity && c.stop_entity !== c.run_entity && this._switchLike(c.stop_entity) && !this._pulse() ? c.stop_entity : null);
         else if (c.run_entity) await this._pressEntity(c.run_entity, true);
         else if (mb) await this._writeRegister(8192, 0x0002);
       } else if (kind === "stop") {
-        if (this._switchLike(c.stop_entity)) await this._switchOn(c.stop_entity, this._switchLike(c.run_entity) && !this._pulse() ? c.run_entity : null);
+        if (c.stop_entity && c.stop_entity === c.run_entity) await this._hass.callService("homeassistant", "turn_off", { entity_id: c.run_entity });
+        else if (this._switchLike(c.stop_entity)) await this._switchOn(c.stop_entity, this._switchLike(c.run_entity) && !this._pulse() ? c.run_entity : null);
         else if (c.stop_entity) await this._pressEntity(c.stop_entity, false);
         else if (this._switchLike(c.run_entity)) await this._hass.callService("homeassistant", "turn_off", { entity_id: c.run_entity });
         else if (mb) await this._writeRegister(8192, 0x0001);
@@ -610,7 +614,7 @@ class DeltaCP2000Card extends HTMLElement {
 
   // In entities mode with an APP CONTROL switch: only allow RUN / speed / reset while it is on.
   _appBlocked() {
-    return this._config.mode === "entities" && !!this._config.control.app_control_entity && !this._appOn();
+    return !!this._config.control.app_control_entity && !this._appOn();
   }
 
   /* ---- pressure (PID) helpers ---- */
@@ -904,7 +908,7 @@ class DeltaCP2000Card extends HTMLElement {
           <div class="minileds"><i id="ml_run"></i><i id="ml_dir"></i><i id="ml_stop"></i></div>
           <div class="runrow">
             <button class="runkey" id="b_run">RUN</button>
-            ${entMode
+            ${entMode || cfg.control.app_control_entity
               ? `<button class="appkey" id="b_app">APP<br>CONTROL</button>`
               : `<button class="fwdrev" id="b_dir"><span class="fw">FWD</span><span class="rv">REV</span></button>`}
             <button class="stopkey" id="b_stop">STOP<br>RESET</button>

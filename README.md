@@ -4,6 +4,8 @@ A Home Assistant dashboard card for **Delta CP2000** variable frequency drives â
 
 ![preview](preview.png)
 
+*Left: speed mode. Right: pressure (PID) pump screen.*
+
 **What it looks like**
 
 The card copies the drive's keypad: a backlit LCD with the **F / H / A** lines, F1â€“F4 soft keys, ERR / COM / RUN lights, and the same key layout:
