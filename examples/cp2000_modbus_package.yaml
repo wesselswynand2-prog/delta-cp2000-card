@@ -1,0 +1,185 @@
+# ---------------------------------------------------------------------------
+# Delta CP2000 VFD — Home Assistant Modbus package
+# Hamlet Elektries
+#
+# 1. Put this file in /config/packages/cp2000_vfd.yaml
+# 2. In configuration.yaml make sure you have:
+#      homeassistant:
+#        packages: !include_dir_named packages
+# 3. Change the port / host and slave address below, then restart HA.
+#
+# Drive settings (on the CP2000 keypad):
+#   09-00  Comm address ............ 1          (must match "slave" below)
+#   09-01  Baud rate ............... 9.6        (kbps, must match "baudrate")
+#   09-04  Protocol ................ 12         (8,N,1 RTU — must match bytesize/parity/stopbits)
+#   09-03  Comm time-out ........... 0.0 = off  (set e.g. 5.0 s if you want the drive to trip on lost comms)
+#   00-20  Freq. source (AUTO) ..... 1 = RS-485 (only if HA must set the speed)
+#   00-21  Run source (AUTO) ....... 2 = RS-485 (only if HA must start/stop the drive)
+# Leave 00-20 / 00-21 on terminals/keypad if you only want to MONITOR the drive,
+# and set "show_controls: false" on the card.
+#
+# Wiring: RS-485 on CP2000 control terminals SG+ / SG-  (twisted pair, shield to GND
+# at one end, 120 ohm termination at both ends of the bus).
+# ---------------------------------------------------------------------------
+
+modbus:
+  - name: vfd                     # <- this is the "hub" name used by the card
+    type: serial
+    method: rtu
+    port: /dev/ttyUSB0            # USB-RS485 adapter on the HA box. Prefer /dev/serial/by-id/...
+    baudrate: 9600
+    bytesize: 8
+    parity: N
+    stopbits: 1
+    timeout: 3
+    message_wait_milliseconds: 30
+
+    # --- Using an RS-485 to Ethernet gateway instead? Replace the block above with:
+    # type: rtuovertcp
+    # host: 192.168.1.50
+    # port: 502
+
+    sensors:
+      # ----- Status / fault (raw words — the card decodes the bits)
+      - name: VFD Fault Code
+        unique_id: vfd_fault_code
+        slave: 1
+        address: 8448             # 2100H
+        input_type: holding
+        data_type: uint16
+        scan_interval: 3
+
+      - name: VFD Status Word
+        unique_id: vfd_status_word
+        slave: 1
+        address: 8449             # 2101H
+        input_type: holding
+        data_type: uint16
+        scan_interval: 3
+
+      # ----- Frequencies
+      - name: VFD Frequency Command
+        unique_id: vfd_frequency_command
+        slave: 1
+        address: 8450             # 2102H  (0.01 Hz)
+        input_type: holding
+        data_type: uint16
+        scale: 0.01
+        precision: 2
+        unit_of_measurement: Hz
+        device_class: frequency
+        state_class: measurement
+        scan_interval: 3
+
+      - name: VFD Output Frequency
+        unique_id: vfd_output_frequency
+        slave: 1
+        address: 8451             # 2103H  (0.01 Hz)
+        input_type: holding
+        data_type: uint16
+        scale: 0.01
+        precision: 2
+        unit_of_measurement: Hz
+        device_class: frequency
+        state_class: measurement
+        scan_interval: 3
+
+      # ----- Electrical
+      - name: VFD Output Current
+        unique_id: vfd_output_current
+        slave: 1
+        address: 8452             # 2104H  (0.01 A on small drives; 0.1 A on big drives -> scale 0.1)
+        input_type: holding
+        data_type: uint16
+        scale: 0.01
+        precision: 2
+        unit_of_measurement: A
+        device_class: current
+        state_class: measurement
+        scan_interval: 3
+
+      - name: VFD DC Bus Voltage
+        unique_id: vfd_dc_bus_voltage
+        slave: 1
+        address: 8453             # 2105H  (0.1 V)
+        input_type: holding
+        data_type: uint16
+        scale: 0.1
+        precision: 1
+        unit_of_measurement: V
+        device_class: voltage
+        state_class: measurement
+        scan_interval: 10
+
+      - name: VFD Output Voltage
+        unique_id: vfd_output_voltage
+        slave: 1
+        address: 8454             # 2106H  (0.1 V)
+        input_type: holding
+        data_type: uint16
+        scale: 0.1
+        precision: 1
+        unit_of_measurement: V
+        device_class: voltage
+        state_class: measurement
+        scan_interval: 5
+
+      - name: VFD Output Power
+        unique_id: vfd_output_power
+        slave: 1
+        address: 8710             # 2206H  CHECK SCALE: compare with keypad kW reading and adjust (0.1 / 0.01 / 0.001)
+        input_type: holding
+        data_type: uint16
+        scale: 0.01
+        precision: 2
+        unit_of_measurement: kW
+        device_class: power
+        state_class: measurement
+        scan_interval: 5
+
+      - name: VFD Motor Speed
+        unique_id: vfd_motor_speed
+        slave: 1
+        address: 8711             # 2207H  (rpm)
+        input_type: holding
+        data_type: int16
+        unit_of_measurement: rpm
+        state_class: measurement
+        scan_interval: 5
+
+      - name: VFD PID Feedback
+        unique_id: vfd_pid_feedback
+        slave: 1
+        address: 8714             # 220AH  (0.01 %) — pressure transducer on AVI/ACI when PID is used
+        input_type: holding
+        data_type: int16
+        scale: 0.01
+        precision: 1
+        unit_of_measurement: "%"
+        state_class: measurement
+        scan_interval: 5
+
+      - name: VFD IGBT Temperature
+        unique_id: vfd_igbt_temperature
+        slave: 1
+        address: 8718             # 220EH  (0.1 °C)
+        input_type: holding
+        data_type: int16
+        scale: 0.1
+        precision: 1
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+        scan_interval: 30
+
+# ----- kWh from kW (for the card's ENERGY tile and the HA Energy dashboard)
+sensor:
+  - platform: integration
+    name: VFD Energy
+    unique_id: vfd_energy
+    source: sensor.vfd_output_power
+    method: left
+    round: 2
+    unit_time: h
+    max_sub_interval:
+      minutes: 1

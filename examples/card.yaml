@@ -1,0 +1,25 @@
+type: custom:delta-cp2000-card
+name: Borehole Pump
+logo: /local/hamlet-logo.png      # optional — put the logo in /config/www/
+min_frequency: 0
+max_frequency: 50
+step: 0.5
+entities:
+  status: sensor.vfd_status_word
+  fault: sensor.vfd_fault_code
+  frequency_command: sensor.vfd_frequency_command
+  output_frequency: sensor.vfd_output_frequency
+  output_current: sensor.vfd_output_current
+  output_voltage: sensor.vfd_output_voltage
+  dc_bus_voltage: sensor.vfd_dc_bus_voltage
+  output_power: sensor.vfd_output_power
+  motor_speed: sensor.vfd_motor_speed
+  igbt_temperature: sensor.vfd_igbt_temperature
+  pid_feedback: sensor.vfd_pid_feedback   # optional
+  energy: sensor.vfd_energy               # optional
+control:
+  hub: vfd          # name of the modbus hub in the package
+  slave: 1          # CP2000 parameter 09-00
+show_controls: true
+allow_reverse: false
+confirm_actions: true

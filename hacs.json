@@ -1,0 +1,6 @@
+{
+  "name": "Delta CP2000 VFD Card",
+  "filename": "delta-cp2000-card.js",
+  "render_readme": true,
+  "homeassistant": "2024.8.0"
+}
