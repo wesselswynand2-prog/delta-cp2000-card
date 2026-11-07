@@ -32,6 +32,47 @@ The drive's faults show on the LCD in plain words (e.g. `uC — Under-current (p
 
 ---
 
+## Two ways to connect: RS-485 or HA entities
+
+Pick **Control mode** at the top of the card editor. The editor only shows the fields for that mode.
+
+### Mode 1 — RS-485 Modbus (`mode: modbus`)
+The card talks to the drive directly over Home Assistant's Modbus integration, using the package in `examples/`. It reads the drive's raw status and fault words and decodes them itself, and RUN/STOP/RESET/speed write straight to the drive.
+
+### Mode 2 — Home Assistant entities (`mode: entities`)
+Use sensors, switches and scripts you **already have** in Home Assistant, e.g. from ESPHome, a PLC, Node-RED or another integration. No Modbus package is needed.
+
+| Card field | Use any… | Meaning |
+|---|---|---|
+| `entities.output_frequency` | sensor | Actual Hz (required) |
+| `entities.running` | binary_sensor / switch / sensor | on (or > 0) = running |
+| `entities.fault` | binary_sensor **or** sensor | on = fault; a number = fault code (decoded); text = shown as-is |
+| `entities.reverse` | binary_sensor / switch | on = reverse |
+| `entities.remote` | binary_sensor | on = remote/AUTO (shown on the LCD) |
+| other readings (A, V, kW, rpm, pressure, kWh…) | sensor | as in Modbus mode |
+| `control.run_entity` | button / script / **switch** | RUN. If it's a switch and there's no stop entity, STOP switches it off |
+| `control.stop_entity` | button / script | STOP |
+| `control.reset_entity` | button / script | STOP/RESET when faulted |
+| `control.setpoint_entity` | number / input_number | Speed (Hz) set with ▲ ▼ ENTER and preset keys |
+| `control.direction_entity` | switch / input_boolean | on = REV |
+
+```yaml
+type: custom:delta-cp2000-card
+mode: entities
+name: Borehole Pump
+entities:
+  running: binary_sensor.borehole_running
+  fault: binary_sensor.borehole_trip
+  output_frequency: sensor.borehole_hz
+  output_current: sensor.borehole_amps
+  pid_feedback: sensor.borehole_pressure
+control:
+  run_entity: switch.borehole_pump
+  setpoint_entity: number.borehole_speed
+```
+
+Anything left empty is hidden or shows "—". The RUN/STOP row only appears when at least one control is set.
+
 ## 1. Install the card (HACS)
 
 1. HACS → ⋮ → **Custom repositories**
@@ -40,7 +81,7 @@ The drive's faults show on the LCD in plain words (e.g. `uC — Under-current (p
 
 Updates you push to GitHub (as a new release) show up in every client's HACS.
 
-## 2. Connect the drive (Modbus)
+## 2. Connect the drive (Modbus mode only)
 
 Copy [`examples/cp2000_modbus_package.yaml`](examples/cp2000_modbus_package.yaml) to `/config/packages/cp2000_vfd.yaml`, change the port (or gateway IP) and restart Home Assistant.
 
@@ -89,6 +130,7 @@ control:
 
 | Option | Default | Description |
 |---|---|---|
+| `mode` | `modbus` | `modbus` (RS-485 direct) or `entities` (existing HA entities) |
 | `name` | `VFD` | Card title |
 | `logo` | Hamlet Elektries logo (built in) | Another image URL, e.g. `/local/client-logo.png`, or `none` to hide |
 | `brand` | – | Text shown instead when `logo: none` |

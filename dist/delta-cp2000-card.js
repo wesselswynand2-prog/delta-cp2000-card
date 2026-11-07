@@ -13,7 +13,7 @@
  *   2101H (8449)  read   drive status word
  */
 
-const CARD_VERSION = "1.3.0";
+const CARD_VERSION = "1.4.0";
 
 // Hamlet Elektries logo (white, transparent background) — built in so no upload is needed.
 const HAMLET_LOGO =
@@ -134,12 +134,17 @@ const LABELS = {
   pid_feedback: "PID feedback / pressure",
   energy: "Energy (kWh)",
   run_hours: "Run hours",
+  mode: "How does Home Assistant talk to the drive?",
+  running: "Running (binary sensor / switch — on = running)",
+  reverse: "Reverse (binary sensor / switch — on = REV)",
+  remote: "Remote / AUTO (binary sensor — on = remote)",
+  direction_entity: "Direction switch (on = REV)",
   hub: "Modbus hub name",
   slave: "Drive Modbus address (09-00)",
-  run_entity: "Run button/script (instead of Modbus)",
-  stop_entity: "Stop button/script (instead of Modbus)",
-  reset_entity: "Reset button/script (instead of Modbus)",
-  setpoint_entity: "Setpoint number entity (instead of Modbus)",
+  run_entity: "RUN — button, script or switch",
+  stop_entity: "STOP — button or script (empty = switch off RUN switch)",
+  reset_entity: "RESET — button or script",
+  setpoint_entity: "Speed setpoint — number / input_number (Hz)",
   show_controls: "Show RUN / STOP / speed keys",
   allow_reverse: "Allow reverse",
   confirm_actions: "Tap twice to confirm",
@@ -165,106 +170,158 @@ const CHEVRON = {
 };
 const chev = (d) => `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="${CHEVRON[d]}"/></svg>`;
 
-class DeltaCP2000Card extends HTMLElement {
-  static getConfigForm() {
-    const ent = (name, domain = "sensor") => ({ name, selector: { entity: { domain } } });
-    const keyForm = (name, title) => ({
+const MODES = [
+  { value: "modbus", label: "RS-485 Modbus — card talks to the drive directly" },
+  { value: "entities", label: "Home Assistant entities — use sensors / switches you already have" },
+];
+
+function cardMode(config) {
+  if (config.mode === "modbus" || config.mode === "entities") return config.mode;
+  return (config.control && config.control.hub) || (config.entities && config.entities.status) ? "modbus" : "entities";
+}
+
+function buildSchema(config) {
+  const mode = cardMode(config || {});
+  const SENS = ["sensor", "number", "input_number"];
+  const BIN = ["binary_sensor", "switch", "input_boolean", "sensor"];
+  const ent = (name, domain = SENS) => ({ name, selector: { entity: { domain } } });
+  const keyForm = (name, title) => ({
+    type: "expandable",
+    name,
+    title,
+    schema: [
+      {
+        type: "grid",
+        schema: [
+          { name: "label", selector: { text: {} } },
+          { name: "function", selector: { select: { mode: "dropdown", options: FUNCTIONS.map(([value, label]) => ({ value, label })) } } },
+        ],
+      },
+      {
+        type: "grid",
+        schema: [
+          { name: "value", selector: { number: { min: 0, max: 600, step: 0.1, mode: "box", unit_of_measurement: "Hz" } } },
+          { name: "entity", selector: { entity: {} } },
+        ],
+      },
+      { name: "tap_action", selector: { ui_action: {} } },
+    ],
+  });
+
+  const stateSensors = mode === "modbus"
+    ? [ent("status", ["sensor"]), ent("fault", ["sensor"])]
+    : [ent("running", BIN), ent("fault", ["binary_sensor", "sensor"]), ent("reverse", BIN), ent("remote", BIN)];
+  const readings = ["frequency_command", "output_frequency", "output_current", "output_voltage", "dc_bus_voltage",
+    "output_power", "motor_speed", "igbt_temperature", "pid_feedback", "energy", "run_hours"].map((k) => ent(k));
+
+  const control = mode === "modbus"
+    ? [{
+        type: "grid",
+        schema: [
+          { name: "hub", selector: { text: {} } },
+          { name: "slave", selector: { number: { min: 1, max: 254, mode: "box" } } },
+        ],
+      }]
+    : [
+        ent("run_entity", ["button", "script", "input_button", "switch", "input_boolean"]),
+        ent("stop_entity", ["button", "script", "input_button"]),
+        ent("reset_entity", ["button", "script", "input_button"]),
+        ent("setpoint_entity", ["number", "input_number"]),
+        ent("direction_entity", ["switch", "input_boolean"]),
+      ];
+
+  return [
+    { name: "mode", required: true, selector: { select: { mode: "list", options: MODES } } },
+    { name: "name", selector: { text: {} } },
+    {
+      type: "grid",
+      schema: [
+        { name: "logo", selector: { text: {} } },
+        { name: "brand", selector: { text: {} } },
+      ],
+    },
+    {
+      type: "grid",
+      schema: [
+        { name: "min_frequency", selector: { number: { min: 0, max: 600, step: 0.5, mode: "box", unit_of_measurement: "Hz" } } },
+        { name: "max_frequency", selector: { number: { min: 1, max: 600, step: 0.5, mode: "box", unit_of_measurement: "Hz" } } },
+        { name: "step", selector: { number: { min: 0.01, max: 10, step: 0.01, mode: "box", unit_of_measurement: "Hz" } } },
+      ],
+    },
+    {
       type: "expandable",
-      name,
-      title,
+      name: "entities",
+      title: mode === "modbus" ? "Drive sensors (from the Modbus package)" : "Drive sensors (any HA entities)",
+      expanded: true,
+      schema: [...stateSensors, ...readings],
+    },
+    {
+      type: "expandable",
+      name: "control",
+      title: mode === "modbus" ? "Control — RS-485 Modbus" : "Control — Home Assistant entities",
+      expanded: true,
+      schema: control,
+    },
+    {
+      type: "expandable",
+      name: "keys",
+      title: "Keys: F1–F4, MENU, HAND, AUTO",
       schema: [
-        {
-          type: "grid",
-          schema: [
-            { name: "label", selector: { text: {} } },
-            { name: "function", selector: { select: { mode: "dropdown", options: FUNCTIONS.map(([value, label]) => ({ value, label })) } } },
-          ],
-        },
-        {
-          type: "grid",
-          schema: [
-            { name: "value", selector: { number: { min: 0, max: 600, step: 0.1, mode: "box", unit_of_measurement: "Hz" } } },
-            { name: "entity", selector: { entity: {} } },
-          ],
-        },
-        { name: "tap_action", selector: { ui_action: {} } },
+        keyForm("f1", "F1"), keyForm("f2", "F2"), keyForm("f3", "F3"), keyForm("f4", "F4"),
+        keyForm("menu", "MENU"), keyForm("hand", "HAND"), keyForm("auto", "AUTO"),
       ],
-    });
-    return {
+    },
+    {
+      type: "grid",
       schema: [
-        { name: "name", selector: { text: {} } },
-        {
-          type: "grid",
-          schema: [
-            { name: "logo", selector: { text: {} } },
-            { name: "brand", selector: { text: {} } },
-          ],
-        },
-        {
-          type: "grid",
-          schema: [
-            { name: "min_frequency", selector: { number: { min: 0, max: 600, step: 0.5, mode: "box", unit_of_measurement: "Hz" } } },
-            { name: "max_frequency", selector: { number: { min: 1, max: 600, step: 0.5, mode: "box", unit_of_measurement: "Hz" } } },
-            { name: "step", selector: { number: { min: 0.01, max: 10, step: 0.01, mode: "box", unit_of_measurement: "Hz" } } },
-          ],
-        },
-        {
-          type: "expandable",
-          name: "keys",
-          title: "Keys: F1–F4, MENU, HAND, AUTO",
-          schema: [
-            keyForm("f1", "F1"),
-            keyForm("f2", "F2"),
-            keyForm("f3", "F3"),
-            keyForm("f4", "F4"),
-            keyForm("menu", "MENU"),
-            keyForm("hand", "HAND"),
-            keyForm("auto", "AUTO"),
-          ],
-        },
-        {
-          type: "expandable",
-          name: "entities",
-          title: "Drive sensors",
-          schema: ENTITY_KEYS.map((k) => ent(k)),
-        },
-        {
-          type: "expandable",
-          name: "control",
-          title: "Control",
-          schema: [
-            {
-              type: "grid",
-              schema: [
-                { name: "hub", selector: { text: {} } },
-                { name: "slave", selector: { number: { min: 1, max: 254, mode: "box" } } },
-              ],
-            },
-            ent("run_entity", ["button", "script", "input_button", "switch"]),
-            ent("stop_entity", ["button", "script", "input_button", "switch"]),
-            ent("reset_entity", ["button", "script", "input_button"]),
-            ent("setpoint_entity", ["number", "input_number"]),
-          ],
-        },
-        {
-          type: "grid",
-          schema: [
-            { name: "show_controls", selector: { boolean: {} } },
-            { name: "allow_reverse", selector: { boolean: {} } },
-            { name: "confirm_actions", selector: { boolean: {} } },
-            {
-              name: "default_page",
-              selector: { select: { mode: "dropdown", options: PAGES.map((p) => ({ value: p, label: PAGE_TITLES[p] })) } },
-            },
-          ],
-        },
+        { name: "show_controls", selector: { boolean: {} } },
+        { name: "allow_reverse", selector: { boolean: {} } },
+        { name: "confirm_actions", selector: { boolean: {} } },
+        { name: "default_page", selector: { select: { mode: "dropdown", options: PAGES.map((p) => ({ value: p, label: PAGE_TITLES[p] })) } } },
       ],
-      computeLabel: (s) => LABELS[s.name] || s.name,
-    };
+    },
+  ];
+}
+
+class DeltaCP2000CardEditor extends HTMLElement {
+  setConfig(config) {
+    this._config = { mode: cardMode(config), ...config };
+    this._draw();
+  }
+
+  set hass(hass) {
+    this._hass = hass;
+    if (this._form) this._form.hass = hass;
+  }
+
+  _draw() {
+    if (!this._form) {
+      this._form = document.createElement("ha-form");
+      this._form.computeLabel = (s) => LABELS[s.name] || s.name;
+      this._form.addEventListener("value-changed", (ev) => {
+        ev.stopPropagation();
+        const config = ev.detail.value;
+        const modeChanged = config.mode !== this._config.mode;
+        this._config = config;
+        if (modeChanged) this._form.schema = buildSchema(config);
+        this.dispatchEvent(new CustomEvent("config-changed", { detail: { config }, bubbles: true, composed: true }));
+      });
+      this.appendChild(this._form);
+    }
+    if (this._hass) this._form.hass = this._hass;
+    this._form.data = this._config;
+    this._form.schema = buildSchema(this._config);
+  }
+}
+
+class DeltaCP2000Card extends HTMLElement {
+  static getConfigElement() {
+    return document.createElement("delta-cp2000-card-editor");
   }
 
   static getStubConfig() {
     return {
+      mode: "modbus",
       name: "Borehole Pump",
       max_frequency: 50,
       entities: {
@@ -290,8 +347,8 @@ class DeltaCP2000Card extends HTMLElement {
   }
 
   setConfig(config) {
-    if (!config || !config.entities || !config.entities.output_frequency) {
-      throw new Error("Set entities.output_frequency (and ideally entities.status) — see README");
+    if (!config || !config.entities || !(config.entities.output_frequency || config.entities.running || config.entities.status)) {
+      throw new Error("Pick at least the output frequency sensor (Drive sensors) — see README");
     }
     const keys = {};
     for (const [k, def] of Object.entries(KEY_DEFAULTS)) {
@@ -313,6 +370,7 @@ class DeltaCP2000Card extends HTMLElement {
       allow_reverse: false,
       confirm_actions: true,
       ...config,
+      mode: cardMode(config),
       default_page: PAGES.includes(dp) ? dp : "main",
       entities: { ...config.entities },
       control: { slave: 1, ...(config.control || {}) },
@@ -378,11 +436,21 @@ class DeltaCP2000Card extends HTMLElement {
 
   /* ---------------- drive control ---------------- */
 
+  _isModbus() {
+    return this._config.mode === "modbus" && !!this._config.control.hub;
+  }
+
+  _switchLike(id) {
+    return !!id && ["switch", "input_boolean", "light", "fan"].includes(id.split(".")[0]);
+  }
+
   _canControl(kind) {
     const c = this._config.control;
-    if (kind === "setpoint") return !!(c.setpoint_entity || c.hub);
-    if (kind === "fwd" || kind === "rev") return !!c.hub;
-    return !!(c[`${kind}_entity`] || c.hub);
+    const mb = this._isModbus();
+    if (kind === "setpoint") return !!c.setpoint_entity || mb;
+    if (kind === "fwd" || kind === "rev") return !!c.direction_entity || mb;
+    if (kind === "stop") return !!c.stop_entity || this._switchLike(c.run_entity) || mb;
+    return !!c[`${kind}_entity`] || mb;
   }
 
   async _writeRegister(address, value) {
@@ -413,23 +481,25 @@ class DeltaCP2000Card extends HTMLElement {
   async _command(kind) {
     const c = this._config.control;
     if (!this._canControl(kind)) {
-      this._toast(`${this._config.name}: no control set up (add the Modbus hub in the card settings)`);
+      this._toast(`${this._config.name}: ${kind.toUpperCase()} not set up — add it under Control in the card settings`);
       return;
     }
+    const mb = this._isModbus();
     try {
       if (kind === "run") {
         if (c.run_entity) await this._pressEntity(c.run_entity, true);
-        else await this._writeRegister(8192, 0x0002);
+        else if (mb) await this._writeRegister(8192, 0x0002);
       } else if (kind === "stop") {
         if (c.stop_entity) await this._pressEntity(c.stop_entity, false);
-        else await this._writeRegister(8192, 0x0001);
+        else if (this._switchLike(c.run_entity)) await this._hass.callService("homeassistant", "turn_off", { entity_id: c.run_entity });
+        else if (mb) await this._writeRegister(8192, 0x0001);
       } else if (kind === "reset") {
         if (c.reset_entity) await this._pressEntity(c.reset_entity, true);
-        else await this._writeRegister(8194, 0x0002);
-      } else if (kind === "fwd") {
-        await this._writeRegister(8192, 0x0010);
-      } else if (kind === "rev") {
-        await this._writeRegister(8192, 0x0020);
+        else if (mb) await this._writeRegister(8194, 0x0002);
+      } else if (kind === "fwd" || kind === "rev") {
+        if (c.direction_entity) {
+          await this._hass.callService("homeassistant", kind === "rev" ? "turn_on" : "turn_off", { entity_id: c.direction_entity });
+        } else if (mb) await this._writeRegister(8192, kind === "rev" ? 0x0020 : 0x0010);
       }
       this._toast(`${this._config.name}: ${kind.toUpperCase()} sent`);
     } catch (e) {
@@ -610,7 +680,7 @@ class DeltaCP2000Card extends HTMLElement {
     const brand = hideLogo
       ? `<div class="brand">${this._esc_(cfg.brand || "")}</div>`
       : `<img class="logo" src="${cfg.logo ? this._esc_(cfg.logo) : HAMLET_LOGO}" alt="Hamlet Elektries">`;
-    const showRow = cfg.show_controls;
+    const showRow = cfg.show_controls && ["run", "stop", "reset"].some((k) => this._canControl(k));
 
     this.shadowRoot.innerHTML = `
       <style>${this._css()}</style>
@@ -735,9 +805,23 @@ class DeltaCP2000Card extends HTMLElement {
     const n = (k) => this._num(k);
     const f = (v, dp) => this._fmt(v, dp);
 
-    const keyEnt = this._st("status") || this._st("output_frequency");
-    const commsLost = !keyEnt || ["unavailable", "unknown"].includes(keyEnt.state);
+    const bad = (e) => !e || ["unavailable", "unknown"].includes(e.state);
+    const isOn = (key) => {
+      const e = this._st(key);
+      if (bad(e)) return null;
+      const v = String(e.state).toLowerCase();
+      if (["on", "true", "run", "running", "open", "reverse", "rev", "remote", "auto", "home"].includes(v)) return true;
+      const num = parseFloat(v);
+      if (Number.isFinite(num)) return num > 0;
+      return false;
+    };
+    const keyEnt = this._st("status") || this._st("output_frequency") || this._st("running");
+    const commsLost = bad(keyEnt);
+    const modbus = cfg.mode === "modbus";
+    const hz = n("output_frequency");
+    const fcmd = n("frequency_command");
 
+    // run state / direction / control source
     const sw = n("status");
     let run = 0, dir = 0, mode = "—";
     if (sw !== null) {
@@ -746,17 +830,39 @@ class DeltaCP2000Card extends HTMLElement {
       dir = (s >> 3) & 0x03;
       mode = (s >> 10) & 1 ? "COMM" : "LOCAL";
       if ((s >> 2) & 1) mode += " JOG";
+    } else {
+      const r = isOn("running");
+      if (r !== null) { run = r ? 3 : 0; }
+      else if (hz !== null) { run = hz > 0.05 ? 3 : 0; }
+      if (isOn("reverse")) dir = 3;
+      else if (cfg.control.direction_entity) {
+        const d = this._hass.states[cfg.control.direction_entity];
+        if (d && d.state === "on") dir = 3;
+      }
+      const rm = isOn("remote");
+      mode = rm === null ? (modbus ? "—" : "HA") : rm ? "REMOTE" : "LOCAL";
     }
 
-    const fw = n("fault");
-    const fcode = fw === null ? 0 : (fw | 0) & 0xff;
-    const wcode = fw === null ? 0 : ((fw | 0) >> 8) & 0xff;
-    const faulted = fcode > 0 && !commsLost;
+    // fault: raw Delta word (Modbus), a fault code number, an on/off fault, or fault text
+    let fcode = 0, wcode = 0, faultText = null;
+    const fe = this._st("fault");
+    if (fe && !bad(fe)) {
+      const raw = String(fe.state).trim();
+      const num = parseFloat(raw);
+      if (Number.isFinite(num)) {
+        const v = num | 0;
+        if (modbus || v > 255) { fcode = v & 0xff; wcode = (v >> 8) & 0xff; }
+        else fcode = v;
+      } else if (["on", "true", "problem", "fault"].includes(raw.toLowerCase())) {
+        fcode = -1; faultText = (fe.attributes && fe.attributes.friendly_name) || "Drive fault";
+      } else if (!["off", "false", "ok", "none", "normal", "no fault", "no_fault", ""].includes(raw.toLowerCase())) {
+        fcode = -1; faultText = raw;
+      }
+    }
+    const faulted = fcode !== 0 && !commsLost;
     this._faulted = faulted;
 
-    const hz = n("output_frequency");
-    const fcmd = n("frequency_command");
-    const running = !commsLost && (sw !== null ? run === 3 || run === 1 : hz !== null && hz > 0.05);
+    const running = !commsLost && (run === 3 || run === 1);
     const reverse = dir === 3 || dir === 2;
 
     let state = "STOPPED", cls = "stopped";
@@ -801,10 +907,11 @@ class DeltaCP2000Card extends HTMLElement {
     if (commsLost) {
       html = `<div class="msg"><div class="mbig">NO COMMS</div><div>Check RS-485 link</div><div>SG+ / SG- / power</div></div>`;
     } else if (faulted) {
-      const fl = FAULTS[fcode];
-      html = `<div class="msg fault"><div class="mbig">${fl ? fl[0] : "Fault"}</div>
-        <div>${fl ? this._esc_(fl[1]) : `Fault code ${fcode}`}</div>
-        <div class="small">Code ${fcode} · press STOP/RESET</div></div>`;
+      const fl = fcode > 0 ? FAULTS[fcode] : null;
+      const desc = faultText ? this._esc_(faultText) : fl ? this._esc_(fl[1]) : `Fault code ${fcode}`;
+      html = `<div class="msg fault"><div class="mbig">${fl ? fl[0] : "FAULT"}</div>
+        <div>${desc}</div>
+        <div class="small">${fcode > 0 ? `Code ${fcode} · ` : ""}press STOP/RESET</div></div>`;
     } else if (this._page === "main") {
       const span = Math.max(0.01, cfg.max_frequency - cfg.min_frequency);
       const pct = (v) => Math.max(0, Math.min(100, ((v - cfg.min_frequency) / span) * 100));
@@ -1037,6 +1144,7 @@ class DeltaCP2000Card extends HTMLElement {
 }
 
 customElements.define("delta-cp2000-card", DeltaCP2000Card);
+if (!customElements.get("delta-cp2000-card-editor")) customElements.define("delta-cp2000-card-editor", DeltaCP2000CardEditor);
 
 window.customCards = window.customCards || [];
 window.customCards.push({

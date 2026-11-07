@@ -1,4 +1,5 @@
 type: custom:delta-cp2000-card
+mode: modbus      # or: entities
 name: Borehole Pump
 min_frequency: 0
 max_frequency: 50
