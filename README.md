@@ -4,22 +4,31 @@ A Home Assistant dashboard card for **Delta CP2000** variable frequency drives �
 
 ![preview](preview.png)
 
-**What it shows**
+**What it looks like**
 
-- Big LCD-style output frequency (Hz) with a speed bar and the setpoint marker
-- Run state (RUNNING / STOPPED / STANDBY / FAULT / OFFLINE), direction, and control source (COMM / LOCAL)
-- Output current, voltage, power, motor rpm, DC bus voltage, IGBT temperature, PID feedback (pressure), energy
-- Fault banner with the fault code **and what it means** (e.g. `uC — Under-current (possible dry run)`)
-- "NO COMMS" warning when the RS-485 link drops
+The card copies the drive's keypad: a backlit LCD with the **F / H / A** lines, F1–F4 soft keys, ERR / COM / RUN lights, and the same key layout:
 
-**What it controls** (optional)
+| | | |
+|---|---|---|
+| ESC | ▲ | MENU |
+| ◀ | ENTER | ▶ |
+| HAND | ▼ | AUTO |
+| RUN | FWD/REV | STOP/RESET |
 
-- RUN / STOP / RESET
-- Speed setpoint: − / + then **SET**
-- FWD / REV (off by default, for pumps)
-- RUN and RESET need a **second tap** to confirm (STOP never asks)
+**What the keys do**
 
-Tap any value to open its history.
+| Key | Function |
+|---|---|
+| ▲ / ▼ | Change the speed — **F** blinks on the LCD |
+| ENTER | Send the new speed to the drive |
+| ESC | Cancel the speed change and go back to the start page |
+| ◀ / ▶ | Previous / next LCD page (Main, Power, Motor, Info, All values) |
+| RUN | Start (tap twice to confirm) |
+| STOP/RESET | Stop when running, reset a trip when faulted (stop never asks) |
+| FWD/REV | Change direction (only if `allow_reverse: true`) |
+| **F1–F4, MENU, HAND, AUTO** | **Your choice** — see *Assignable keys* below |
+
+The drive's faults show on the LCD in plain words (e.g. `uC — Under-current (possible dry run)`), and "NO COMMS" shows when the RS-485 link drops. Tap a value on the LCD to open its history.
 
 ---
 
@@ -81,8 +90,8 @@ control:
 | Option | Default | Description |
 |---|---|---|
 | `name` | `VFD` | Card title |
-| `logo` | – | Image URL, e.g. `/local/hamlet-logo.png` (file in `/config/www/`) |
-| `brand` | `HAMLET elektries` | Text shown when no logo is set |
+| `logo` | Hamlet Elektries logo (built in) | Another image URL, e.g. `/local/client-logo.png`, or `none` to hide |
+| `brand` | – | Text shown instead when `logo: none` |
 | `min_frequency` / `max_frequency` | 0 / 50 | Speed bar range and setpoint limits (Hz) |
 | `step` | 0.5 | Hz per − / + tap |
 | `entities.*` | – | Sensors (only `output_frequency` is required; `status` strongly recommended) |
@@ -92,8 +101,45 @@ control:
 | `show_controls` | `true` | Show buttons |
 | `allow_reverse` | `false` | Show FWD/REV button |
 | `confirm_actions` | `true` | Tap twice for RUN / RESET / direction |
+| `default_page` | `main` | LCD page shown first: main, power, motor, info, all |
+| `keys` | see below | What F1–F4, MENU, HAND and AUTO do |
 
 Accent colour follows the theme variable `--hamlet-accent` (default blue).
+
+## Assignable keys (F1–F4, MENU, HAND, AUTO)
+
+Set them in the card editor under **Keys**, or in YAML. The label is what shows on the LCD above the key (keep it to 5 letters).
+
+| `function` | What it does | Needs |
+|---|---|---|
+| `page_main` / `page_power` / `page_motor` / `page_info` / `page_all` | Show that LCD page | – |
+| `preset` | Send a fixed speed | `value` (Hz) |
+| `run` / `stop` / `reset` / `fwd` / `rev` | Drive command | Modbus hub |
+| `toggle` / `turn_on` / `turn_off` | Switch an entity (pump mode, valve, light…) | `entity` |
+| `press` | Press a button or run a script (tap twice) | `entity` |
+| `more_info` | Open the entity's details | `entity` |
+| `action` | Any Home Assistant action | `tap_action` |
+| `none` | Nothing | – |
+
+The label goes dark (selected) when that page is showing, when the preset speed is active, or when the entity is on.
+
+```yaml
+keys:
+  f1: { label: MAIN, function: page_main }
+  f2: { label: 35Hz, function: preset, value: 35 }
+  f3: { label: 48Hz, function: preset, value: 48 }
+  f4: { label: PRES, function: toggle, entity: input_boolean.pressure_mode }
+  menu: { function: page_all }
+  hand:
+    function: action
+    tap_action:
+      action: perform-action
+      perform_action: script.turn_on
+      target: { entity_id: script.pump_hand_mode }
+  auto: { function: press, entity: script.pump_auto_mode }
+```
+
+Defaults: F1 Main, F2 Power, F3 Motor, F4 Info, MENU = all values, HAND / AUTO = nothing.
 
 ## Registers used
 

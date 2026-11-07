@@ -1,6 +1,5 @@
 type: custom:delta-cp2000-card
 name: Borehole Pump
-logo: /local/hamlet-logo.png      # optional — put the logo in /config/www/
 min_frequency: 0
 max_frequency: 50
 step: 0.5
@@ -23,3 +22,11 @@ control:
 show_controls: true
 allow_reverse: false
 confirm_actions: true
+keys:
+  f1: { label: MAIN, function: page_main }
+  f2: { label: POWR, function: page_power }
+  f3: { label: 35Hz, function: preset, value: 35 }
+  f4: { label: 48Hz, function: preset, value: 48 }
+  menu: { function: page_all }
+  hand: { function: none }
+  auto: { function: none }
