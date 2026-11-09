@@ -1,0 +1,37 @@
+name: Release
+
+# Creates a GitHub release automatically whenever the card version changes.
+# Bump CARD_VERSION in dist/delta-cp2000-card.js, push, and HACS sees the update.
+
+on:
+  push:
+    branches: [main]
+    paths: [dist/delta-cp2000-card.js]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read card version
+        id: v
+        run: |
+          VERSION=$(grep -oP 'CARD_VERSION = "\K[0-9.]+' dist/delta-cp2000-card.js)
+          echo "version=v$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Card version: v$VERSION"
+
+      - name: Create release (skipped if it already exists)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG=${{ steps.v.outputs.version }}
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Release $TAG already exists - nothing to do"
+          else
+            gh release create "$TAG" --title "$TAG" --generate-notes --latest
+          fi

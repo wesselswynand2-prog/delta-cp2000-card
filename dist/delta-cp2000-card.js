@@ -13,7 +13,7 @@
  *   2101H (8449)  read   drive status word
  */
 
-const CARD_VERSION = "1.8.1";
+const CARD_VERSION = "1.8.3";
 
 // Hamlet Elektries logo (white, transparent background) — built in so no upload is needed.
 const HAMLET_LOGO =
@@ -489,7 +489,11 @@ class DeltaCP2000Card extends HTMLElement {
     const s = this._st(key);
     if (!s) return null;
     const v = parseFloat(s.state);
-    return Number.isFinite(v) ? v : null;
+    if (!Number.isFinite(v)) return null;
+    // power / energy sensors in W / Wh are shown in kW / kWh
+    const u = s.attributes && s.attributes.unit_of_measurement;
+    if ((key === "output_power" && u === "W") || (key === "energy" && u === "Wh")) return v / 1000;
+    return v;
   }
 
   _unit(key, fallback) {
@@ -1107,7 +1111,13 @@ class DeltaCP2000Card extends HTMLElement {
     // LCD body
     let html = "";
     if (commsLost) {
-      html = `<div class="msg"><div class="mbig">NO COMMS</div><div>Check RS-485 link</div><div>SG+ / SG- / power</div></div>`;
+      const keyId = cfg.entities.status || cfg.entities.output_frequency || cfg.entities.running || "";
+      const missing = keyId && !this._hass.states[keyId];
+      html = missing
+        ? `<div class="msg"><div class="mbig">NO DATA</div><div>Entity not found:</div><div class="small">${this._esc_(keyId)}</div><div class="small">Check the sensor names in the card settings</div></div>`
+        : modbus
+          ? `<div class="msg"><div class="mbig">NO COMMS</div><div>Check RS-485 link</div><div>SG+ / SG- / power</div></div>`
+          : `<div class="msg"><div class="mbig">NO DATA</div><div>Sensor unavailable:</div><div class="small">${this._esc_(keyId)}</div></div>`;
     } else if (faulted) {
       const fl = fcode > 0 ? FAULTS[fcode] : null;
       const desc = faultText ? this._esc_(faultText) : fl ? this._esc_(fl[1]) : `Fault code ${fcode}`;
