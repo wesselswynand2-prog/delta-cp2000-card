@@ -13,7 +13,7 @@
  *   2101H (8449)  read   drive status word
  */
 
-const CARD_VERSION = "1.8.3";
+const CARD_VERSION = "1.8.4";
 
 // Hamlet Elektries logo (white, transparent background) — built in so no upload is needed.
 const HAMLET_LOGO =
@@ -644,7 +644,8 @@ class DeltaCP2000Card extends HTMLElement {
   _pressureNow() {
     const v = this._num("pid_feedback");
     if (v === null) return null;
-    return this._unit("pid_feedback", "%") === "%" && this._config.p_unit !== "%" ? (v * Number(this._config.p_sensor_max)) / 100 : v;
+    // only a sensor that really reports % (e.g. Modbus 220AH) is scaled with the transducer range
+    return this._unit("pid_feedback", "") === "%" && this._config.p_unit !== "%" ? (v * Number(this._config.p_sensor_max)) / 100 : v;
   }
 
   _spDecimals() {
