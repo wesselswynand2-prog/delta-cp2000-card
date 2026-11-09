@@ -13,7 +13,7 @@
  *   2101H (8449)  read   drive status word
  */
 
-const CARD_VERSION = "1.8.4";
+const CARD_VERSION = "1.8.5";
 
 // Hamlet Elektries logo (white, transparent background) — built in so no upload is needed.
 const HAMLET_LOGO =
@@ -128,7 +128,7 @@ const LABELS = {
   p_step: "Pressure step (▲ / ▼)",
   p_sensor_max: "Transducer range (full scale)",
   p_fmax: "Drive max Hz (01-00)",
-  pressure_setpoint: "Set pressure (sensor, optional)",
+  pressure_setpoint: "Set pressure read back from drive (optional)",
   pressure_setpoint_entity: "Set pressure — number / input_number",
   box1: "Box 1 (right, middle)",
   box2: "Box 2 (right, bottom)",
@@ -663,8 +663,9 @@ class DeltaCP2000Card extends HTMLElement {
       return Number.isFinite(v) ? v : null;
     };
     if (this._isPressure()) {
+      // prefer the setpoint read back from the drive, so the screen shows what the drive really has
+      if (this._config.entities.pressure_setpoint && this._num("pressure_setpoint") !== null) return this._num("pressure_setpoint");
       if (c.pressure_setpoint_entity) return fromEnt(c.pressure_setpoint_entity);
-      if (this._config.entities.pressure_setpoint) return this._num("pressure_setpoint");
       return this._hzToP(this._num("frequency_command"));
     }
     if (c.setpoint_entity) return fromEnt(c.setpoint_entity);
@@ -1129,7 +1130,7 @@ class DeltaCP2000Card extends HTMLElement {
       // Pump / PID screen: SETPOINT | PRESENT VALUE boxes like the drive's own pump display
       const dp = this._spDecimals();
       const u = this._esc_(cfg.p_unit.charAt(0).toUpperCase() + cfg.p_unit.slice(1));
-      const spKey = cfg.control.pressure_setpoint_entity ? "" : cfg.entities.pressure_setpoint ? "pressure_setpoint" : "frequency_command";
+      const spKey = cfg.entities.pressure_setpoint ? "pressure_setpoint" : cfg.control.pressure_setpoint_entity ? "" : "frequency_command";
       const de = (k) => (k && cfg.entities[k] ? `data-ent="${k}"` : "");
       const box = (b, area) => {
         const bc = (cfg.boxes && cfg.boxes[b]) || {};
