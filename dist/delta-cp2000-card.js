@@ -13,7 +13,7 @@
  *   2101H (8449)  read   drive status word
  */
 
-const CARD_VERSION = "1.8.5";
+const CARD_VERSION = "1.8.6";
 
 // Hamlet Elektries logo (white, transparent background) — built in so no upload is needed.
 const HAMLET_LOGO =
@@ -1148,6 +1148,10 @@ class DeltaCP2000Card extends HTMLElement {
           } else {
             val = String(st.state).toUpperCase();
           }
+        }
+        if (!st) {   // a wrong entity id: say so on the screen instead of a bare dash
+          return `<div class="pc box ${area}" data-box="${b}" title="${this._esc_(id)} not found">
+            <span class="bl">${this._esc_(bc.label || b.toUpperCase())}</span><span class="bv"><span class="v" style="font-size:12px">NOT FOUND</span></span></div>`;
         }
         const label = bc.label !== undefined ? bc.label : (st && st.attributes.friendly_name) || "";
         const on = st && ["on", "open", "running"].includes(st.state);
