@@ -13,7 +13,7 @@
  *   2101H (8449)  read   drive status word
  */
 
-const CARD_VERSION = "1.8.6";
+const CARD_VERSION = "1.8.7";
 
 // Hamlet Elektries logo (white, transparent background) — built in so no upload is needed.
 const HAMLET_LOGO =
@@ -1210,6 +1210,11 @@ class DeltaCP2000Card extends HTMLElement {
     if (html !== this._lastHtml) {
       $("screen").innerHTML = html;
       this._lastHtml = html;
+      this._fitScreen();
+    }
+    if (!this._fitRO && window.ResizeObserver) {   // phone turned / card resized: fit the numbers again
+      this._fitRO = new ResizeObserver(() => this._fitScreen());
+      this._fitRO.observe($("lcd"));
     }
 
     // keys
@@ -1223,6 +1228,32 @@ class DeltaCP2000Card extends HTMLElement {
       const b = $(`k_${k}`);
       if (b) b.classList.toggle("lit", this._keyActive(k));
     }
+  }
+
+  // Shrink the text in any LCD cell that is too narrow for it (phones, large text settings), so numbers are never cut off.
+  _fitScreen() {
+    const root = this.shadowRoot; if (!root) return;
+    const cells = root.querySelectorAll("#screen .pidlcd > div, #screen .ln, #screen .all > div");
+    cells.forEach((cell) => {
+      const parts = [cell, ...cell.querySelectorAll("*")];
+      parts.forEach((el) => { el.style.fontSize = ""; el.style.letterSpacing = ""; });
+      // content is right-aligned, so an overflow spills out on the left where scrollWidth can't see it: add up the parts instead
+      const rng = document.createRange();
+      const need = () => {
+        const cs = getComputedStyle(cell);
+        rng.selectNodeContents(cell);
+        return rng.getBoundingClientRect().width + (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+      };
+      const room = () => cell.clientWidth - 2;     // inside the borders
+      for (let i = 0; i < 5 && room() > 0 && need() > room() + 0.5; i++) {
+        const k = Math.max(0.4, (room() / need()) * 0.97);
+        parts.forEach((el) => {
+          const cs = getComputedStyle(el), fs = parseFloat(cs.fontSize), ls = parseFloat(cs.letterSpacing);
+          if (fs) el.style.fontSize = `${(fs * k).toFixed(2)}px`;
+          if (ls) el.style.letterSpacing = `${(ls * k).toFixed(2)}px`;
+        });
+      }
+    });
   }
 
   _esc_(s) {
