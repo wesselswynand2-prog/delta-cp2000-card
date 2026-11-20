@@ -1,0 +1,246 @@
+# ---------------------------------------------------------------------------
+# Delta CP2000 + Hamlet "Single Pump V9.0.1" PLC program — Home Assistant Modbus package
+# Hamlet Elektries
+#
+# Put this file in /config/packages/cp2000_pump.yaml and restart Home Assistant.
+#
+# Connection: Waveshare RS485-to-Ethernet, Protocol "Modbus TCP to RTU", Multi-host = Yes
+#   -> change host / port below if your Waveshare is different.
+#
+# Two Modbus addresses on the same RS-485 line:
+#   slave 1 = the drive itself            (parameter 09-00)
+#   slave 2 = the drive's built-in PLC    (parameter 09-35, Delta default 2)
+#   If 09-35 is not 2, change EVERY "slave: 2" below (Find & Replace "slave: 2").
+#
+# PLC register map (Delta): D<n> = 4096 + n,  M<n> = 2048 + n
+# ---------------------------------------------------------------------------
+
+modbus:
+  - name: vfd                       # the card's "Modbus hub name"
+    type: tcp                       # Waveshare protocol = Modbus TCP to RTU
+    host: 192.168.10.254
+    port: 510
+    timeout: 3
+    delay: 1
+
+    sensors:
+      # ================= DRIVE (slave 1) =================
+      - name: VFD Fault Code
+        unique_id: vfd_fault_code
+        slave: 1
+        address: 8448               # 2100H
+        input_type: holding
+        data_type: uint16
+        scan_interval: 5
+
+      - name: VFD Status Word
+        unique_id: vfd_status_word
+        slave: 1
+        address: 8449               # 2101H
+        input_type: holding
+        data_type: uint16
+        scan_interval: 3
+
+      - name: VFD Output Frequency
+        unique_id: vfd_output_frequency
+        slave: 1
+        address: 8451               # 2103H
+        input_type: holding
+        data_type: uint16
+        scale: 0.01
+        precision: 2
+        unit_of_measurement: Hz
+        device_class: frequency
+        state_class: measurement
+        scan_interval: 3
+
+      - name: VFD Output Current
+        unique_id: vfd_output_current
+        slave: 1
+        address: 8452               # 2104H — compare with keypad; big drives use 0.1
+        input_type: holding
+        data_type: uint16
+        scale: 0.01
+        precision: 1
+        unit_of_measurement: A
+        device_class: current
+        state_class: measurement
+        scan_interval: 3
+
+      - name: VFD Output Voltage
+        unique_id: vfd_output_voltage
+        slave: 1
+        address: 8454               # 2106H
+        input_type: holding
+        data_type: uint16
+        scale: 0.1
+        precision: 0
+        unit_of_measurement: V
+        device_class: voltage
+        state_class: measurement
+        scan_interval: 10
+
+      - name: VFD DC Bus Voltage
+        unique_id: vfd_dc_bus_voltage
+        slave: 1
+        address: 8453               # 2105H
+        input_type: holding
+        data_type: uint16
+        scale: 0.1
+        precision: 0
+        unit_of_measurement: V
+        device_class: voltage
+        state_class: measurement
+        scan_interval: 15
+
+      - name: VFD IGBT Temperature
+        unique_id: vfd_igbt_temperature
+        slave: 1
+        address: 8718               # 220EH
+        input_type: holding
+        data_type: int16
+        scale: 0.1
+        precision: 1
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+        scan_interval: 30
+
+      # ================= PUMP PROGRAM (PLC, slave 2) =================
+      - name: Pump Pressure
+        unique_id: pump_plc_pressure
+        slave: 2
+        address: 4158               # D62  PRESENT VALUE (0.00 bar)
+        input_type: holding
+        data_type: int16
+        scale: 0.01
+        precision: 2
+        unit_of_measurement: bar
+        device_class: pressure
+        state_class: measurement
+        scan_interval: 3
+
+      - name: Pump Setpoint
+        unique_id: pump_plc_setpoint
+        slave: 2
+        address: 4400               # D304 SETPOINT (0.00 bar) — the card writes here
+        input_type: holding
+        data_type: int16
+        scale: 0.01
+        precision: 2
+        unit_of_measurement: bar
+        device_class: pressure
+        scan_interval: 5
+
+      - name: Pump D318
+        unique_id: pump_plc_d318
+        slave: 2
+        address: 4414               # D318 small box under PRESENT VALUE (0.0)
+        input_type: holding
+        data_type: int16
+        scale: 0.1
+        precision: 1
+        scan_interval: 10
+
+      - name: Pump App Control Mode
+        unique_id: pump_plc_app_mode
+        slave: 2
+        address: 4490               # D394  0 = PANEL, 1 = APP AUTO, 2 = APP MAN
+        input_type: holding
+        data_type: uint16
+        scan_interval: 5
+
+      - name: Pump Power
+        unique_id: pump_plc_kw
+        slave: 2
+        address: 4458               # D362 INFO page (0.0) — check: kW?
+        input_type: holding
+        data_type: uint16
+        scale: 0.1
+        precision: 1
+        unit_of_measurement: kW
+        device_class: power
+        state_class: measurement
+        scan_interval: 10
+
+      - name: Pump Energy
+        unique_id: pump_plc_kwh
+        slave: 2
+        address: 4462               # D366 INFO page (0.0) — check: kWh?
+        input_type: holding
+        data_type: uint16
+        scale: 0.1
+        precision: 1
+        unit_of_measurement: kWh
+        device_class: energy
+        state_class: total_increasing
+        scan_interval: 60
+
+      - name: Pump INFO D364
+        unique_id: pump_plc_d364
+        slave: 2
+        address: 4460               # D364 INFO page 3rd value (0.0) — check what it is
+        input_type: holding
+        data_type: uint16
+        scale: 0.1
+        precision: 1
+        scan_interval: 60
+
+      - name: Pump Runtime Days
+        unique_id: pump_plc_run_days
+        slave: 2
+        address: 4494               # D398
+        input_type: holding
+        data_type: uint16
+        unit_of_measurement: d
+        scan_interval: 300
+
+      - name: Pump Runtime Minutes
+        unique_id: pump_plc_run_minutes
+        slave: 2
+        address: 4493               # D397
+        input_type: holding
+        data_type: uint16
+        unit_of_measurement: min
+        scan_interval: 60
+
+      - name: Pump Max Pressure
+        unique_id: pump_plc_max_pressure
+        slave: 2
+        address: 4114               # D18 transducer max pressure (0.00 bar?) — check
+        input_type: holding
+        data_type: int16
+        scale: 0.01
+        precision: 2
+        unit_of_measurement: bar
+        scan_interval: 600
+
+    binary_sensors:
+      - name: Pump Sleep
+        unique_id: pump_plc_sleep
+        slave: 2
+        address: 2351               # M303  "SLEEP..."
+        input_type: coil
+        scan_interval: 5
+
+      - name: Pump Boosting
+        unique_id: pump_plc_boost
+        slave: 2
+        address: 2103               # M55   "Boosting" — check on site
+        input_type: coil
+        scan_interval: 5
+
+      - name: Pump No Load
+        unique_id: pump_plc_no_load
+        slave: 2
+        address: 2369               # M321  "No Load" — check on site
+        input_type: coil
+        scan_interval: 5
+
+      - name: Pump Fault
+        unique_id: pump_plc_fault
+        slave: 2
+        address: 2400               # M352  "FAULT!!!" — check on site
+        input_type: coil
+        device_class: problem
+        scan_interval: 5

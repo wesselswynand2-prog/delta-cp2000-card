@@ -13,7 +13,7 @@
  *   2101H (8449)  read   drive status word
  */
 
-const CARD_VERSION = "1.8.7";
+const CARD_VERSION = "1.9.0";
 
 // Hamlet Elektries logo (white, transparent background) — built in so no upload is needed.
 const HAMLET_LOGO =
@@ -148,6 +148,18 @@ const LABELS = {
   pid_feedback: "Actual pressure / PID feedback",
   energy: "Energy (kWh)",
   run_hours: "Run hours",
+  sleep: "Pump program: SLEEP flag",
+  boost: "Pump program: BOOSTING flag",
+  no_load: "Pump program: NO LOAD flag",
+  pump_fault: "Pump program: FAULT flag",
+  app_mode: "Pump program: APP CONTROL MODE (0 Panel / 1 App Auto / 2 App Man)",
+  run_days: "Runtime days",
+  run_minutes: "Runtime minutes",
+  plc: "Pump program PLC (Modbus)",
+  plc_slave: "PLC Modbus address (09-35)",
+  setpoint_register: "Setpoint register (D304 = 4400)",
+  setpoint_scale: "Setpoint scale (100 = 0.00 bar)",
+  app_mode_register: "App mode register (D394 = 4490)",
   mode: "How does Home Assistant talk to the drive?",
   running: "Running (binary sensor / switch — on = running)",
   reverse: "Reverse (binary sensor / switch — on = REV)",
@@ -230,8 +242,12 @@ function buildSchema(config) {
     ? [ent("status", ["sensor"]), ent("fault", ["sensor"])]
     : [ent("running", BIN), ent("fault", ["binary_sensor", "sensor"]), ent("reverse", BIN), ent("remote", BIN)];
   const readings = ["frequency_command", "output_frequency", "output_current", "output_voltage", "dc_bus_voltage",
-    "output_power", "motor_speed", "igbt_temperature", "pid_feedback", ...(pressure && mode === "entities" ? ["pressure_setpoint"] : []),
-    "energy", "run_hours"].map((k) => ent(k));
+    "output_power", "motor_speed", "igbt_temperature", "pid_feedback",
+    "energy", "run_hours", "run_days", "run_minutes"].map((k) => ent(k));
+  const program = [
+    ent("sleep", ["binary_sensor"]), ent("boost", ["binary_sensor"]), ent("no_load", ["binary_sensor"]),
+    ent("pump_fault", ["binary_sensor"]), ent("app_mode", ["sensor", "input_select", "input_number", "number", "select"]),
+  ];
 
   const control = mode === "modbus"
     ? [{
@@ -297,8 +313,28 @@ function buildSchema(config) {
       name: "entities",
       title: mode === "modbus" ? "Drive sensors (from the Modbus package)" : "Drive sensors (any HA entities)",
       expanded: true,
-      schema: [...stateSensors, ...readings],
+      schema: [...stateSensors, ...readings, ...(pressure ? [ent("pressure_setpoint")] : [])],
     },
+    {
+      type: "expandable",
+      name: "entities",
+      title: "Pump program (Single Pump V9): status flags & app mode",
+      schema: program,
+    },
+    ...(mode === "modbus" ? [{
+      type: "expandable",
+      name: "plc",
+      title: "Pump program PLC — where the card writes setpoint / app mode",
+      schema: [{
+        type: "grid",
+        schema: [
+          { name: "slave", selector: { number: { min: 1, max: 254, mode: "box" } } },
+          { name: "setpoint_register", selector: { number: { min: 0, max: 65535, mode: "box" } } },
+          { name: "setpoint_scale", selector: { number: { min: 1, max: 1000, mode: "box" } } },
+          { name: "app_mode_register", selector: { number: { min: 0, max: 65535, mode: "box" } } },
+        ],
+      }],
+    }] : []),
     {
       type: "expandable",
       name: "control",
@@ -528,20 +564,49 @@ class DeltaCP2000Card extends HTMLElement {
   _canControl(kind) {
     const c = this._config.control;
     const mb = this._isModbus();
-    if (kind === "setpoint") return this._isPressure() ? !!c.pressure_setpoint_entity || mb : !!c.setpoint_entity || mb;
+    if (kind === "setpoint") return this._isPressure() ? !!c.pressure_setpoint_entity || mb || !!this._plc() : !!c.setpoint_entity || mb;
     if (kind === "fwd" || kind === "rev") return !!c.direction_entity || mb;
     if (kind === "stop") return !!c.stop_entity || this._switchLike(c.run_entity) || mb;
     return !!c[`${kind}_entity`] || mb;
   }
 
-  async _writeRegister(address, value) {
+  async _writeRegister(address, value, slave) {
     const c = this._config.control;
     await this._hass.callService("modbus", "write_register", {
       hub: c.hub,
-      slave: Number(c.slave) || 1,
+      slave: Number(slave || c.slave) || 1,
       address,
       value,
     });
+  }
+
+  /* ---- pump program PLC (Single Pump V9) ---- */
+  _plc() {
+    const p = this._config.plc;
+    return p && this._config.control.hub ? p : null;
+  }
+
+  _plcSlave() {
+    return Number(this._plc() && this._plc().slave) || 2;
+  }
+
+  // 0 = PANEL, 1 = APP AUTO, 2 = APP MAN ; null when not used
+  _appMode() {
+    const id = this._config.entities.app_mode;
+    const st = id && this._hass ? this._hass.states[id] : null;
+    if (!st) return null;
+    const raw = String(st.state).toLowerCase();
+    const v = parseFloat(raw);
+    if (Number.isFinite(v)) return Math.round(v);
+    if (raw.includes("man")) return 2;
+    if (raw.includes("auto") || raw.includes("app")) return 1;
+    if (raw.includes("panel")) return 0;
+    return null;
+  }
+
+  _flag(key) {
+    const st = this._st(key);
+    return !!st && st.state === "on";
   }
 
   async _pressEntity(entityId, on = true) {
@@ -611,6 +676,8 @@ class DeltaCP2000Card extends HTMLElement {
   }
 
   _appOn() {
+    const m = this._appMode();
+    if (m !== null) return m > 0;
     const id = this._config.control.app_control_entity;
     const s = id && this._hass ? this._hass.states[id] : null;
     return !!s && s.state === "on";
@@ -618,6 +685,7 @@ class DeltaCP2000Card extends HTMLElement {
 
   // In entities mode with an APP CONTROL switch: only allow RUN / speed / reset while it is on.
   _appBlocked() {
+    if (this._config.entities.app_mode && this._appMode() !== null) return this._appMode() === 0;
     return !!this._config.control.app_control_entity && !this._appOn();
   }
 
@@ -690,7 +758,12 @@ class DeltaCP2000Card extends HTMLElement {
       if (ent) {
         await this._hass.callService(ent.split(".")[0], "set_value", { entity_id: ent, value: hz });
       } else {
-        await this._writeRegister(8193, Math.round((pressure ? this._pToHz(hz) : hz) * 100));
+        const plc = this._plc();
+        if (pressure && plc && plc.setpoint_register !== undefined && plc.setpoint_register !== "") {
+          await this._writeRegister(Number(plc.setpoint_register), Math.round(hz * (Number(plc.setpoint_scale) || 100)), this._plcSlave());
+        } else {
+          await this._writeRegister(8193, Math.round((pressure ? this._pToHz(hz) : hz) * 100));
+        }
       }
       this._toast(pressure
         ? `${this._config.name}: pressure set to ${hz.toFixed(this._spDecimals())} ${this._config.p_unit}`
@@ -914,8 +987,8 @@ class DeltaCP2000Card extends HTMLElement {
           <div class="minileds"><i id="ml_run"></i><i id="ml_dir"></i><i id="ml_stop"></i></div>
           <div class="runrow">
             <button class="runkey" id="b_run">RUN</button>
-            ${entMode || cfg.control.app_control_entity
-              ? `<button class="appkey" id="b_app">APP<br>CONTROL</button>`
+            ${entMode || cfg.control.app_control_entity || cfg.entities.app_mode
+              ? `<button class="appkey" id="b_app"><span id="app_l1">APP</span><br><span id="app_l2">CONTROL</span></button>`
               : `<button class="fwdrev" id="b_dir"><span class="fw">FWD</span><span class="rv">REV</span></button>`}
             <button class="stopkey" id="b_stop">STOP<br>RESET</button>
           </div>` : ""}
@@ -957,6 +1030,30 @@ class DeltaCP2000Card extends HTMLElement {
       else this._command("stop"); // stop never needs confirmation
     });
     on("b_app", (b) => {
+      const mode = this._appMode();
+      const plc = this._plc();
+      if (this._config.entities.app_mode && mode !== null) {
+        const names = ["PANEL", "APP AUTO", "APP MAN"];
+        const next = (mode + 1) % 3;
+        const id = this._config.entities.app_mode;
+        const dom = id.split(".")[0];
+        this._confirmThen(b, () => {
+          let call;
+          if (plc && plc.app_mode_register !== undefined && plc.app_mode_register !== "") {
+            call = this._writeRegister(Number(plc.app_mode_register), next, this._plcSlave());
+          } else if (["input_number", "number"].includes(dom)) {
+            call = this._hass.callService(dom, "set_value", { entity_id: id, value: next });
+          } else if (["input_select", "select"].includes(dom)) {
+            call = this._hass.callService(dom, "select_next", { entity_id: id, cycle: true });
+          } else {
+            this._toast("APP CONTROL: set the PLC app mode register in the card settings");
+            return;
+          }
+          return call.then(() => this._toast(`${this._config.name}: control mode → ${names[next]}`))
+            .catch((e) => this._toast(`APP CONTROL failed — ${e.message || e}`));
+        });
+        return;
+      }
       const id = this._config.control.app_control_entity;
       if (!id) {
         this._toast("APP CONTROL: pick a switch for it under Control in the card settings");
@@ -1072,11 +1169,20 @@ class DeltaCP2000Card extends HTMLElement {
     else if (sw !== null && run === 1) { state = "STOPPING"; cls = "running"; }
     else if (running) { state = "RUNNING"; cls = "running"; }
     else if (sw !== null && run === 2) { state = "STANDBY"; cls = "standby"; }
+    // pump program flags (Single Pump V9)
+    const pFault = this._flag("pump_fault"), pSleep = this._flag("sleep"), pBoost = this._flag("boost"), pNoLoad = this._flag("no_load");
+    const progStatus = commsLost ? null : pFault ? "FAULT!!!" : pSleep ? "SLEEP..." : pBoost ? "BOOSTING" : pNoLoad ? "NO LOAD" : null;
+    if (!commsLost && !faulted) {
+      if (pFault) { state = "PUMP FAULT"; cls = "fault"; }
+      else if (pSleep) { state = "SLEEP"; cls = "standby"; }
+      else if (pBoost) { state = "BOOSTING"; cls = "running"; }
+      else if (pNoLoad) { state = "NO LOAD"; cls = "standby"; }
+    }
     $("pill").className = `pill ${cls}`;
     set("pilltxt", state);
 
     // LEDs
-    $("led_err").className = faulted ? "on red" : wcode ? "on amber blinkled" : "";
+    $("led_err").className = faulted || pFault ? "on red" : wcode ? "on amber blinkled" : "";
     $("led_com").className = commsLost ? "" : "on green";
     $("led_run").className = running ? (run === 1 ? "on green blinkled" : "on green") : "";
     if ($("ml_run")) {
@@ -1100,7 +1206,7 @@ class DeltaCP2000Card extends HTMLElement {
     // LCD title + softkeys
     set("t_mode", mode);
     set("t_dir", DIRS[dir]);
-    set("t_run", sw !== null ? RUN_STATES[run] : running ? "RUN" : "STOP");
+    set("t_run", progStatus || (sw !== null ? RUN_STATES[run] : running ? "RUN" : "STOP"));
     set("t_page", faulted ? "FAULT" : commsLost ? "----" : PAGE_TITLES[this._page]);
     for (const k of ["f1", "f2", "f3", "f4"]) {
       const el = $(`sb_${k}`);
@@ -1169,7 +1275,7 @@ class DeltaCP2000Card extends HTMLElement {
         ${box("box1", "small")}
         <div class="pc amp" ${de("output_current")}><span class="v">${f(n("output_current"), 1)}</span><span class="u">A</span></div>
         ${box("box2", "blank")}
-        <div class="pfoot"><div class="pf st">${running ? (reverse ? "REV RUN" : "RUN") : "STOP"}</div>${soft}</div>
+        <div class="pfoot"><div class="pf st ${progStatus ? "act" : ""}">${progStatus || (running ? (reverse ? "REV RUN" : "RUN") : "STOP")}</div>${soft}</div>
       </div>`;
     } else if (this._page === "main") {
       const span = Math.max(0.01, cfg.max_frequency - cfg.min_frequency);
@@ -1191,10 +1297,17 @@ class DeltaCP2000Card extends HTMLElement {
         this._line("pid_feedback", "b", f(n("pid_feedback"), 1), this._unit("pid_feedback", "%")) +
         this._line("igbt_temperature", "t", f(n("igbt_temperature"), 1), "°C");
     } else if (this._page === "info") {
+      const days = n("run_days"), mins = n("run_minutes");
+      const am = this._appMode();
       html =
+        (cfg.entities.output_power ? this._line("output_power", "P", f(n("output_power"), 1), "kW") : "") +
         this._line("energy", "E", f(n("energy"), 1), "kWh", { sel: true }) +
-        this._line("run_hours", "h", f(n("run_hours"), 0), "Hr") +
-        this._line("fault", "Er", wcode ? `W${wcode}` : "none", "");
+        (days !== null || mins !== null
+          ? this._line("run_days", "T", `${days === null ? "—" : days.toFixed(0)}d ${mins === null ? "—" : mins.toFixed(0)}m`, "")
+          : this._line("run_hours", "h", f(n("run_hours"), 0), "Hr")) +
+        (am !== null
+          ? this._line("app_mode", "C", ["PANEL", "APP AUTO", "APP MAN"][am] || String(am), "")
+          : this._line("fault", "Er", wcode ? `W${wcode}` : "none", ""));
     } else {
       const rows = [
         ["frequency_command", "F cmd", 2, "Hz"], ["output_frequency", "Out", 2, "Hz"],
@@ -1221,7 +1334,14 @@ class DeltaCP2000Card extends HTMLElement {
     this._dirNext = reverse ? "fwd" : "rev";
     $("k_enter").classList.toggle("ready", editing);
     if ($("b_dir")) $("b_dir").classList.toggle("isrev", reverse);
-    if ($("b_app")) $("b_app").classList.toggle("on", this._appOn());
+    if ($("b_app")) {
+      $("b_app").classList.toggle("on", this._appOn());
+      const am = this._appMode();
+      if (am !== null) {
+        set("app_l1", am === 0 ? "PANEL" : "APP");
+        set("app_l2", am === 0 ? "CONTROL" : am === 1 ? "AUTO" : "MANUAL");
+      }
+    }
     if ($("b_run")) $("b_run").classList.toggle("lit", running && !faulted);
     if ($("b_stop")) $("b_stop").classList.toggle("attn", faulted);
     for (const k of ["menu", "hand", "auto"]) {

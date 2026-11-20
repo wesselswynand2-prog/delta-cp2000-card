@@ -187,6 +187,24 @@ Numbers are shown with their unit, on/off entities show ON/OFF (box goes dark wh
 **Modbus mode — drive settings for PID from the card:** the CP2000 takes its PID target from the frequency command, where 01-00 (max Hz) = 100 % = transducer full scale. So the card writes `set pressure ÷ p_sensor_max × 01-00` to 2001H.
 Set **08-00** to your PID feedback input (e.g. ACI/AVI), **08-65 = 0** (PID target from the frequency command), **00-20 = 1** (RS-485). Check these against your drive manual on first install, and compare the card's pressure with the keypad.
 
+## Hamlet "Single Pump V9" PLC program
+
+For CP2000 drives running the Hamlet *Single Pump V9.0.1* PLC program (built-in PLC + keypad screens), the pump values live in **PLC registers**, not the drive's own registers. Use:
+
+- `examples/cp2000_pump_plc_package.yaml` → `/config/packages/` (Waveshare Modbus TCP-to-RTU; drive = slave 1, PLC = slave 2 / parameter 09-35)
+- `examples/card_pump_plc.yaml` → the card config
+
+| Card | PLC register |
+|---|---|
+| PRESENT VALUE | D62 (0.00 bar) |
+| SETPOINT (read + written by ▲ ▼ ENTER) | D304 (0.00 bar) |
+| SLEEP / BOOSTING / NO LOAD / FAULT (pump screen + status pill + ERR light) | M303 / M55 / M321 / M352 |
+| APP CONTROL key (cycles PANEL → APP AUTO → APP MAN, tap twice) | D394 |
+| INFO page: kW, kWh, runtime | D362, D366, D398/D397 |
+
+While the program is in **PANEL** mode (D394 = 0) the card blocks RUN / setpoint / reset; STOP always works.
+Register meanings were read from the keypad screen file — verify on the first install against the drive's keypad.
+
 ## Assignable keys (F1–F4, MENU, HAND, AUTO)
 
 Set them in the card editor under **Keys**, or in YAML. The label is what shows on the LCD above the key (keep it to 5 letters).

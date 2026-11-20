@@ -1,0 +1,47 @@
+# Card for a CP2000 running the Hamlet "Single Pump V9.0.1" PLC program
+# (use together with examples/cp2000_pump_plc_package.yaml)
+type: custom:delta-cp2000-card
+mode: modbus
+name: Single Pump
+max_frequency: 50
+default_page: main
+setpoint_type: pressure
+p_min: 0
+p_max: 10
+p_step: 0.1
+p_unit: bar
+entities:
+  status: sensor.vfd_status_word
+  fault: sensor.vfd_fault_code
+  output_frequency: sensor.vfd_output_frequency
+  output_current: sensor.vfd_output_current
+  output_voltage: sensor.vfd_output_voltage
+  dc_bus_voltage: sensor.vfd_dc_bus_voltage
+  igbt_temperature: sensor.vfd_igbt_temperature
+  pid_feedback: sensor.pump_pressure            # D62  PRESENT VALUE
+  pressure_setpoint: sensor.pump_setpoint       # D304 SETPOINT
+  output_power: sensor.pump_power               # D362
+  energy: sensor.pump_energy                    # D366
+  run_days: sensor.pump_runtime_days            # D398
+  run_minutes: sensor.pump_runtime_minutes      # D397
+  sleep: binary_sensor.pump_sleep               # M303
+  boost: binary_sensor.pump_boosting            # M55
+  no_load: binary_sensor.pump_no_load           # M321
+  pump_fault: binary_sensor.pump_fault          # M352
+  app_mode: sensor.pump_app_control_mode        # D394
+control:
+  hub: vfd
+  slave: 1          # drive address (09-00)
+plc:
+  slave: 2          # PLC address (09-35)
+  setpoint_register: 4400   # D304
+  setpoint_scale: 100       # 0.00 bar
+  app_mode_register: 4490   # D394
+boxes:
+  box1: { entity: sensor.pump_d318, label: D318 }
+  box2: { entity: sensor.pump_power, label: POWER }
+keys:
+  f1: { label: MAIN, function: page_main }
+  f2: { label: POWR, function: page_power }
+  f3: { label: MOTR, function: page_motor }
+  f4: { label: INFO, function: page_info }
