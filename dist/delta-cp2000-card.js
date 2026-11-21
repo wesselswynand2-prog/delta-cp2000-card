@@ -13,7 +13,7 @@
  *   2101H (8449)  read   drive status word
  */
 
-const CARD_VERSION = "1.11.1";
+const CARD_VERSION = "1.11.2";
 
 // Hamlet Elektries logo (white, transparent background) — built in so no upload is needed.
 const HAMLET_LOGO =
@@ -1571,25 +1571,26 @@ class DeltaCP2000Card extends HTMLElement {
   // Shrink the text in any LCD cell that is too narrow for it (phones, large text settings), so numbers are never cut off.
   _fitScreen() {
     const root = this.shadowRoot; if (!root) return;
-    const cells = root.querySelectorAll("#screen .pidlcd > div, #screen .ln, #screen .all > div");
+    const cells = root.querySelectorAll("#screen .pidlcd > div:not(.pfoot), #screen .pidlcd .pfoot > div, #screen .ln, #screen .all > div");
+    const rng = document.createRange();
     cells.forEach((cell) => {
-      const parts = [cell, ...cell.querySelectorAll("*")];
-      parts.forEach((el) => { el.style.fontSize = ""; el.style.letterSpacing = ""; });
-      // content is right-aligned, so an overflow spills out on the left where scrollWidth can't see it: add up the parts instead
-      const rng = document.createRange();
-      const need = () => {
-        const cs = getComputedStyle(cell);
+      // Scale with a multiplier (--fit) instead of writing px sizes: a phone that enlarges text would
+      // otherwise enlarge our "smaller" size again and the text would grow instead of shrink.
+      let fit = 1;
+      cell.style.setProperty("--fit", "1");
+      const cs = getComputedStyle(cell);
+      const padX = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+      const roomW = cell.clientWidth - 2, roomH = cell.clientHeight - 1;
+      if (roomW <= 0 || roomH <= 0) return;
+      for (let i = 0; i < 6; i++) {
         rng.selectNodeContents(cell);
-        return rng.getBoundingClientRect().width + (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
-      };
-      const room = () => cell.clientWidth - 2;     // inside the borders
-      for (let i = 0; i < 5 && room() > 0 && need() > room() + 0.5; i++) {
-        const k = Math.max(0.4, (room() / need()) * 0.97);
-        parts.forEach((el) => {
-          const cs = getComputedStyle(el), fs = parseFloat(cs.fontSize), ls = parseFloat(cs.letterSpacing);
-          if (fs) el.style.fontSize = `${(fs * k).toFixed(2)}px`;
-          if (ls) el.style.letterSpacing = `${(ls * k).toFixed(2)}px`;
-        });
+        const r = rng.getBoundingClientRect();
+        const needW = r.width + padX;
+        const needH = Math.max(r.height, cell.scrollHeight > cell.clientHeight + 1 ? cell.scrollHeight : 0);
+        const k = Math.min(roomW / needW, needH > roomH + 0.5 ? roomH / needH : 1);
+        if (!(k < 0.995)) break;
+        fit = Math.max(0.3, fit * k * 0.97);
+        cell.style.setProperty("--fit", fit.toFixed(3));
       }
     });
   }
@@ -1599,7 +1600,10 @@ class DeltaCP2000Card extends HTMLElement {
   }
 
   _css() {
-    return this._cssRaw().replace(/font-size:\s*([\d.]+)px/g, "font-size: calc($1px * var(--tz, 1))");
+    // every px font size follows --tz (phone text zoom fix) and --fit (per-cell shrink-to-fit)
+    return this._cssRaw()
+      .replace(/font-size:\s*([\d.]+)px/g, "font-size: calc($1px * var(--tz, 1) * var(--fit, 1))")
+      .replace(/letter-spacing:\s*([\d.]+)px/g, "letter-spacing: calc($1px * var(--fit, 1))");
   }
 
   // Phones with a big system font size (or the HA app's text zoom) blow up all text but not the boxes
