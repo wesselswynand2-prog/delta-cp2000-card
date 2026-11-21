@@ -17,6 +17,7 @@
 # Addresses: Pump 1 PLC = 2, Pump 2 PLC = 4 (change the numbers below if yours differ).
 # ---------------------------------------------------------------------------
 
+# No 'initial:' on purpose: Home Assistant restores the last mode and settings after a restart.
 input_select:
   pump_house_mode:
     name: Pump house mode
