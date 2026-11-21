@@ -205,6 +205,19 @@ For CP2000 drives running the Hamlet *Single Pump V9.0.1* PLC program (built-in 
 While the program is in **PANEL** mode (D394 = 0) the card blocks RUN / setpoint / reset; STOP always works.
 Register meanings were read from the keypad screen file — verify on the first install against the drive's keypad.
 
+## Settings menu (MENU key)
+
+**MENU** opens a settings menu on the LCD, like the drive's own keypad:
+
+- **Pump program** (Single Pump V9): multi-setpoints SP1–15, transducer, sleep & wake, PID, motor setup, over-current stall, boost, dry run / auto restart, no flow, burst pipe, prime & fill, auto acc/dec, manual speed, slave mode, backflush, DX control, VFD functions
+- **Drive parameters**: speed & ramps (01-00, 01-10..01-13), motor (05-01..05-04, 06-14), PID (08-00..08-05, 08-65), control & comms (00-20, 00-21, 09-00, 09-01, 09-04, 09-35 — comms are read-only so you can't cut yourself off)
+
+Keys in the menu: **▲▼** choose / change · **ENTER** open / save · **ESC** back · **◀▶** next group, or change the step (×10 / ÷10) while editing. You can also tap a line, or type the value on a phone keyboard.
+
+Saving asks for the **`pin`** from the card config (then stays unlocked for 10 min). Anyone who can edit the dashboard can see the PIN, so it protects against clients, not against admins.
+
+The values come from the "MENU SETTINGS" sensors in `examples/cp2000_pump_plc_package.yaml` (read every 2 min, refreshed right after a change). Decimals, ranges and register numbers were taken from the keypad screen file — check each one against the keypad before relying on it.
+
 ## Assignable keys (F1–F4, MENU, HAND, AUTO)
 
 Set them in the card editor under **Keys**, or in YAML. The label is what shows on the LCD above the key (keep it to 5 letters).

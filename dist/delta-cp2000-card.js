@@ -13,7 +13,7 @@
  *   2101H (8449)  read   drive status word
  */
 
-const CARD_VERSION = "1.9.0";
+const CARD_VERSION = "1.10.0";
 
 // Hamlet Elektries logo (white, transparent background) — built in so no upload is needed.
 const HAMLET_LOGO =
@@ -79,6 +79,10 @@ const FAULTS = {
 const RUN_STATES = ["STOP", "STOPPING", "STANDBY", "RUN"];
 const DIRS = ["FWD", "REV→FWD", "FWD→REV", "REV"];
 
+// Settings menu (MENU key): Hamlet Single Pump V9 program (D = PLC register) + drive parameters (P = GG-NN).
+// Generated from one list together with examples/cp2000_pump_plc_package.yaml — keep them in step.
+const MENU_V9 = [{"t": "SETPOINTS (MULTI)", "i": [{"r": "D31", "l": "SP1", "d": 2, "min": 0, "max": 50, "u": "bar"}, {"r": "D32", "l": "SP2", "d": 2, "min": 0, "max": 50, "u": "bar"}, {"r": "D33", "l": "SP3", "d": 2, "min": 0, "max": 50, "u": "bar"}, {"r": "D34", "l": "SP4", "d": 2, "min": 0, "max": 50, "u": "bar"}, {"r": "D35", "l": "SP5", "d": 2, "min": 0, "max": 50, "u": "bar"}, {"r": "D36", "l": "SP6", "d": 2, "min": 0, "max": 50, "u": "bar"}, {"r": "D37", "l": "SP7", "d": 2, "min": 0, "max": 50, "u": "bar"}, {"r": "D38", "l": "SP8", "d": 2, "min": 0, "max": 50, "u": "bar"}, {"r": "D39", "l": "SP9", "d": 2, "min": 0, "max": 50, "u": "bar"}, {"r": "D40", "l": "SP10", "d": 2, "min": 0, "max": 50, "u": "bar"}, {"r": "D41", "l": "SP11", "d": 2, "min": 0, "max": 50, "u": "bar"}, {"r": "D42", "l": "SP12", "d": 2, "min": 0, "max": 50, "u": "bar"}, {"r": "D43", "l": "SP13", "d": 2, "min": 0, "max": 50, "u": "bar"}, {"r": "D44", "l": "SP14", "d": 2, "min": 0, "max": 50, "u": "bar"}, {"r": "D45", "l": "SP15", "d": 2, "min": 0, "max": 50, "u": "bar"}]}, {"t": "TRANSDUCER", "i": [{"r": "D18", "l": "Max pressure", "d": 2, "min": 0, "max": 50, "u": "bar"}, {"r": "D178", "l": "Feedback det time", "d": 1, "min": 0, "max": 3600, "u": "s"}]}, {"t": "SLEEP & WAKE", "i": [{"r": "D130", "l": "Sleep", "d": 0, "min": 0, "max": 200}, {"r": "D140", "l": "Wake", "d": 0, "min": 0, "max": 100}]}, {"t": "PID", "i": [{"r": "D176", "l": "P (default 1.0)", "d": 1, "min": 0, "max": 100}, {"r": "D172", "l": "I (default 1.00)", "d": 2, "min": 0, "max": 100}, {"r": "D174", "l": "D (default 0.00)", "d": 2, "min": 0, "max": 1}]}, {"t": "MOTOR SETUP", "i": [{"r": "D2", "l": "Rated amps", "d": 2, "min": 0, "max": 999, "u": "A"}, {"r": "D272", "l": "Min speed", "d": 2, "min": 0, "max": 50, "u": "Hz"}, {"r": "D250", "l": "No load amps", "d": 2, "min": 0, "max": 999, "u": "A"}, {"r": "D252", "l": "No load delay", "d": 0, "min": 0, "max": 3600, "u": "s"}, {"r": "D249", "l": "Direction", "d": 0, "min": 0, "max": 1, "opts": ["FWD", "REV"]}]}, {"t": "OVER CURRENT STALL", "i": [{"r": "D209", "l": "OC on accel", "d": 1, "min": 0, "max": 999.9, "u": "%"}, {"r": "D205", "l": "OC on normal", "d": 1, "min": 0, "max": 999.9, "u": "%"}]}, {"t": "BOOST", "i": [{"r": "D239", "l": "Boost enable", "d": 0, "min": 0, "max": 1, "opts": ["NO", "YES"]}, {"r": "D270", "l": "Boost on", "d": 0, "min": 0, "max": 2, "opts": ["AMPS", "FREQ", "BOTH"]}, {"r": "D260", "l": "Boost amps", "d": 2, "min": 0, "max": 99.99, "u": "A"}, {"r": "D123", "l": "Boost freq", "d": 1, "min": 0, "max": 99.9, "u": "Hz"}, {"r": "D110", "l": "Boost delay", "d": 0, "min": 0, "max": 99, "u": "s"}, {"r": "D122", "l": "Boost acc", "d": 2, "min": 0, "max": 99.99, "u": "s"}, {"r": "D124", "l": "Boost dec", "d": 2, "min": 0, "max": 99.99, "u": "s"}]}, {"t": "DRY RUN / RESTART", "i": [{"r": "D16", "l": "Dry run time", "d": 1, "min": 0, "max": 999.9, "u": "s"}, {"r": "D20", "l": "Auto restart", "d": 0, "min": 0, "max": 1, "opts": ["DISABLED", "ENABLED"]}, {"r": "D127", "l": "Restart hours", "d": 0, "min": 0, "max": 23, "u": "h"}, {"r": "D125", "l": "Restart min", "d": 0, "min": 0, "max": 59, "u": "min"}, {"r": "D129", "l": "Restart sec", "d": 0, "min": 0, "max": 59, "u": "s"}]}, {"t": "NO FLOW", "i": [{"r": "D152", "l": "No flow hertz", "d": 2, "min": 0, "max": 50, "u": "Hz"}, {"r": "D150", "l": "No flow det time", "d": 1, "min": 0, "max": 999.9, "u": "s"}]}, {"t": "BURST PIPE", "i": [{"r": "D322", "l": "Burst det time", "d": 0, "min": 0, "max": 99, "u": "s"}, {"r": "D324", "l": "Burst SP", "d": 0, "min": 0, "max": 100}]}, {"t": "PRIME & FILL", "i": [{"r": "D96", "l": "Prime stay on", "d": 0, "min": 0, "max": 1, "opts": ["NO", "YES"]}, {"r": "D164", "l": "Priming time", "d": 1, "min": 0, "max": 6553.5, "u": "s"}, {"r": "D158", "l": "Fill time", "d": 1, "min": 0, "max": 3200, "u": "s"}, {"r": "D166", "l": "Filling speed", "d": 2, "min": 0, "max": 60, "u": "Hz"}]}, {"t": "AUTO ACC/DEC", "i": [{"r": "D126", "l": "Accel 1", "d": 2, "min": 0, "max": 999.99, "u": "s"}, {"r": "D128", "l": "Decel", "d": 2, "min": 0, "max": 999.99, "u": "s"}, {"r": "D156", "l": "Accel 2", "d": 0, "min": 0, "max": 1, "opts": ["NO", "YES"]}, {"r": "D148", "l": "Accel 2 time", "d": 2, "min": 0, "max": 999.99, "u": "s"}, {"r": "D154", "l": "Acc 2 start", "d": 2, "min": 0, "max": 50, "u": "Hz"}]}, {"t": "MANUAL SPEED", "i": [{"r": "D144", "l": "Manual speed", "d": 2, "min": 3, "max": 650, "u": "Hz"}, {"r": "D266", "l": "Use auto acc/dec", "d": 0, "min": 0, "max": 1, "opts": ["NO", "YES"]}]}, {"t": "SLAVE MODE", "i": [{"r": "D332", "l": "Start hertz", "d": 2, "min": 0, "max": 60, "u": "Hz"}, {"r": "D336", "l": "Start time", "d": 1, "min": 0, "max": 6553.5, "u": "s"}, {"r": "D334", "l": "Stop hertz", "d": 2, "min": 0, "max": 60, "u": "Hz"}, {"r": "D338", "l": "Stop time", "d": 1, "min": 0, "max": 6553.5, "u": "s"}]}, {"t": "BACKFLUSH", "i": [{"r": "D342", "l": "No. of filters", "d": 0, "min": 0, "max": 4}, {"r": "D348", "l": "% setpoint start", "d": 0, "min": 0, "max": 100, "u": "%"}, {"r": "D346", "l": "BF duration", "d": 1, "min": 0, "max": 6553.5, "u": "s"}, {"r": "D344", "l": "BF interval", "d": 0, "min": 0, "max": 65535}, {"r": "D340", "l": "BF cycle time", "d": 1, "min": 0, "max": 6533.9, "u": "s"}]}, {"t": "DX CONTROL", "i": [{"r": "D358", "l": "Run time", "d": 0, "min": 0, "max": 65535}]}, {"t": "VFD FUNCTIONS", "i": [{"r": "D220", "l": "Run on command", "d": 0, "min": 0, "max": 1, "opts": ["NO", "YES"]}, {"r": "D222", "l": "Forced OCSPM", "d": 2, "min": 0, "max": 999.99}, {"r": "D394", "l": "App control", "d": 0, "min": 0, "max": 2, "opts": ["PANEL", "APP AUTO", "APP MAN"]}]}, {"t": "DRIVE: SPEED & RAMPS", "i": [{"r": "P01-00", "l": "01-00 Max output Hz", "d": 2, "min": 0, "max": 599, "u": "Hz"}, {"r": "P01-10", "l": "01-10 Upper limit", "d": 2, "min": 0, "max": 599, "u": "Hz"}, {"r": "P01-11", "l": "01-11 Lower limit", "d": 2, "min": 0, "max": 599, "u": "Hz"}, {"r": "P01-12", "l": "01-12 Accel time 1", "d": 2, "min": 0, "max": 600, "u": "s"}, {"r": "P01-13", "l": "01-13 Decel time 1", "d": 2, "min": 0, "max": 600, "u": "s"}]}, {"t": "DRIVE: MOTOR", "i": [{"r": "P05-01", "l": "05-01 Rated current", "d": 2, "min": 0, "max": 655.35, "u": "A"}, {"r": "P05-02", "l": "05-02 Rated power", "d": 2, "min": 0, "max": 655.35, "u": "kW"}, {"r": "P05-03", "l": "05-03 Rated speed", "d": 0, "min": 0, "max": 65535, "u": "rpm"}, {"r": "P05-04", "l": "05-04 Poles", "d": 0, "min": 2, "max": 20}, {"r": "P06-14", "l": "06-14 Thermal time", "d": 1, "min": 30, "max": 600, "u": "s"}]}, {"t": "DRIVE: PID", "i": [{"r": "P08-00", "l": "08-00 Feedback input", "d": 0, "min": 0, "max": 7}, {"r": "P08-01", "l": "08-01 P gain", "d": 1, "min": 0, "max": 100}, {"r": "P08-02", "l": "08-02 I time", "d": 2, "min": 0, "max": 100, "u": "s"}, {"r": "P08-03", "l": "08-03 D time", "d": 2, "min": 0, "max": 1, "u": "s"}, {"r": "P08-04", "l": "08-04 I upper limit", "d": 1, "min": 0, "max": 100, "u": "%"}, {"r": "P08-05", "l": "08-05 Output limit", "d": 1, "min": 0, "max": 110, "u": "%"}, {"r": "P08-65", "l": "08-65 Target source", "d": 0, "min": 0, "max": 5}]}, {"t": "DRIVE: CONTROL & COMMS", "i": [{"r": "P00-20", "l": "00-20 Freq source", "d": 0, "min": 0, "max": 9}, {"r": "P00-21", "l": "00-21 Run source", "d": 0, "min": 0, "max": 5}, {"r": "P09-00", "l": "09-00 Drive address", "d": 0, "min": 1, "max": 254, "ro": true}, {"r": "P09-01", "l": "09-01 Baud (kbps)", "d": 1, "min": 4.8, "max": 115.2, "ro": true}, {"r": "P09-04", "l": "09-04 Protocol", "d": 0, "min": 0, "max": 17, "ro": true}, {"r": "P09-35", "l": "09-35 PLC address", "d": 0, "min": 1, "max": 254, "ro": true}]}];
+
 const PAGES = ["main", "power", "motor", "info", "all"];
 const PAGE_TITLES = { main: "MAIN", power: "POWER", motor: "MOTOR", info: "INFO", all: "ALL VALUES" };
 
@@ -89,6 +93,7 @@ const FUNCTIONS = [
   ["page_motor", "LCD page: Motor / pump"],
   ["page_info", "LCD page: Info (kWh / hours)"],
   ["page_all", "LCD page: All values"],
+  ["settings", "Settings menu (pump program + drive parameters)"],
   ["preset", "Preset speed (Hz in 'Value')"],
   ["run", "Drive RUN"],
   ["stop", "Drive STOP"],
@@ -109,7 +114,7 @@ const KEY_DEFAULTS = {
   f2: { label: "POWR", function: "page_power" },
   f3: { label: "MOTR", function: "page_motor" },
   f4: { label: "INFO", function: "page_info" },
-  menu: { function: "page_all" },
+  menu: { function: "settings" },
   hand: { function: "none" },
   auto: { function: "none" },
 };
@@ -177,6 +182,7 @@ const LABELS = {
   allow_reverse: "Allow reverse",
   confirm_actions: "Tap twice to confirm",
   default_page: "Start page",
+  pin: "PIN to change settings (empty = no PIN)",
   label: "Label on screen (max 5)",
   function: "Function",
   value: "Value (Hz for preset)",
@@ -383,6 +389,7 @@ function buildSchema(config) {
         { name: "show_controls", selector: { boolean: {} } },
         { name: "allow_reverse", selector: { boolean: {} } },
         { name: "confirm_actions", selector: { boolean: {} } },
+        { name: "pin", selector: { text: { type: "password" } } },
         { name: "default_page", selector: { select: { mode: "dropdown", options: PAGES.map((p) => ({ value: p, label: PAGE_TITLES[p] })) } } },
       ],
     },
@@ -871,6 +878,13 @@ class DeltaCP2000Card extends HTMLElement {
       this._toast(`${label}: pick an entity for this key in the card settings`);
       return false;
     };
+    if (f === "settings") {
+      if (!this._menuAvailable()) { this._page = "all"; this._update(); return; }
+      this._page = "menu";
+      this._m = { lvl: "g", g: (this._m && this._m.g) || 0, i: 0 };
+      this._update();
+      return;
+    }
     if (f.startsWith("page_")) {
       this._page = f.slice(5);
       this._update();
@@ -1001,6 +1015,14 @@ class DeltaCP2000Card extends HTMLElement {
       if (el) el.addEventListener("click", () => fn(el));
     };
     root.getElementById("screen").addEventListener("click", (ev) => {
+      if (ev.target.closest("input")) return;
+      const mr = ev.target.closest("[data-mi]");
+      if (mr && this._m) {
+        const idx = Number(mr.dataset.mi);
+        if (this._m.lvl === "g") this._m.g = idx; else this._m.i = idx;
+        this._menuKey("enter");
+        return;
+      }
       const bx = ev.target.closest("[data-box]");
       if (bx) return this._tapBox(bx.dataset.box);
       const sk = ev.target.closest("[data-soft]");
@@ -1014,12 +1036,14 @@ class DeltaCP2000Card extends HTMLElement {
     ["f1", "f2", "f3", "f4"].forEach((k) =>
       on(`sb_${k}`, () => this._doKey(k, root.querySelector(`.fk[data-key="${k}"]`)))
     );
-    on("k_esc", () => this._esc());
-    on("k_up", () => this._nudge(1));
-    on("k_down", () => this._nudge(-1));
-    on("k_left", () => this._turnPage(-1));
-    on("k_right", () => this._turnPage(1));
+    const inMenu = (k) => (this._page === "menu" ? (this._menuKey(k), true) : false);
+    on("k_esc", () => inMenu("esc") || this._esc());
+    on("k_up", () => inMenu("up") || this._nudge(1));
+    on("k_down", () => inMenu("down") || this._nudge(-1));
+    on("k_left", () => inMenu("left") || this._turnPage(-1));
+    on("k_right", () => inMenu("right") || this._turnPage(1));
     on("k_enter", () => {
+      if (inMenu("enter")) return;
       if (this._sp !== null && !this._spSentAt) this._sendSetpoint();
       else this._toast("Use ▲ / ▼ to change the speed, then ENTER");
     });
@@ -1083,6 +1107,177 @@ class DeltaCP2000Card extends HTMLElement {
     if (!id || bc.tap === "none") return;
     if (bc.tap === "toggle") this._hass.callService("homeassistant", "toggle", { entity_id: id });
     else this._moreInfo(id);
+  }
+
+  /* ---------------- settings menu (MENU key) ---------------- */
+
+  _menuAvailable() {
+    return !!this._config.control.hub;
+  }
+
+  _menuGroups() {
+    // drive-parameter groups only need the hub; program groups need the PLC settings
+    return MENU_V9.filter((g) => !g.i[0].r.startsWith("D") || this._plc());
+  }
+
+  _menuTarget(it) {
+    if (it.r.startsWith("D")) return { address: 4096 + Number(it.r.slice(1)), slave: this._plcSlave() };
+    const [g, n] = it.r.slice(1).split("-").map(Number);
+    return { address: g * 256 + n, slave: Number(this._config.control.slave) || 1 };
+  }
+
+  _menuEntity(it) {
+    return it.r.startsWith("D") ? `sensor.pump_d${it.r.slice(1)}` : `sensor.vfd_p${it.r.slice(1).replace("-", "_")}`;
+  }
+
+  _menuValue(it) {
+    const st = this._hass.states[this._menuEntity(it)];
+    if (!st) return { missing: true };
+    const raw = parseFloat(st.state);
+    if (!Number.isFinite(raw)) return { na: true };
+    return { v: raw / Math.pow(10, it.d) };
+  }
+
+  _menuFmt(it, v) {
+    if (v === null || v === undefined) return "—";
+    if (it.opts) return it.opts[Math.round(v)] !== undefined ? it.opts[Math.round(v)] : String(v);
+    return Number(v).toFixed(it.d);
+  }
+
+  _menuKey(k) {
+    const m = this._m;
+    const groups = this._menuGroups();
+    if (!m || !groups.length) { this._page = this._config.default_page; this._update(); return; }
+    const g = groups[Math.min(m.g, groups.length - 1)];
+    const it = g.i[Math.min(m.i, g.i.length - 1)];
+    const wrap = (x, n) => (x + n) % n;
+    if (m.lvl === "g") {
+      if (k === "up") m.g = wrap(m.g - 1, groups.length);
+      else if (k === "down") m.g = wrap(m.g + 1, groups.length);
+      else if (k === "enter" || k === "right") { m.lvl = "i"; m.i = 0; }
+      else if (k === "esc" || k === "left") { this._page = this._config.default_page; this._m = null; }
+    } else if (m.lvl === "i") {
+      if (k === "up") m.i = wrap(m.i - 1, g.i.length);
+      else if (k === "down") m.i = wrap(m.i + 1, g.i.length);
+      else if (k === "left") { m.g = wrap(m.g - 1, groups.length); m.i = 0; }
+      else if (k === "right") { m.g = wrap(m.g + 1, groups.length); m.i = 0; }
+      else if (k === "esc") m.lvl = "g";
+      else if (k === "enter") {
+        if (it.ro) { this._toast(`${it.l}: read-only here (changing it could cut off communication)`); return; }
+        const cur = this._menuValue(it);
+        m.val = cur.v !== undefined ? cur.v : Number(it.min);
+        m.step = it.opts ? 1 : Math.pow(10, -it.d);
+        m.lvl = "e";
+      }
+    } else if (m.lvl === "e") {
+      const clamp = (v) => Math.min(Number(it.max), Math.max(Number(it.min), v));
+      if (k === "up" || k === "down") {
+        const dir = k === "up" ? 1 : -1;
+        if (it.opts) m.val = wrap(Math.round(m.val) + dir, it.opts.length);
+        else m.val = clamp(Math.round((m.val + dir * m.step) / m.step) * m.step);
+        const inp = this.shadowRoot.getElementById("m_in");
+        if (inp) inp.value = this._menuFmt(it, m.val);
+      } else if (!it.opts && (k === "left" || k === "right")) {
+        const minStep = Math.pow(10, -it.d);
+        m.step = k === "left" ? Math.min(m.step * 10, 1000) : Math.max(m.step / 10, minStep);
+        const st = this.shadowRoot.getElementById("m_step");
+        if (st) st.textContent = this._menuFmt(it, m.step);
+        return;
+      } else if (k === "esc") m.lvl = "i";
+      else if (k === "enter") {
+        const inp = this.shadowRoot.getElementById("m_in");
+        if (inp && !it.opts) {
+          const typed = parseFloat(String(inp.value).replace(",", "."));
+          if (!Number.isFinite(typed)) { this._toast("Not a number"); return; }
+          if (typed < Number(it.min) || typed > Number(it.max)) { this._toast(`Allowed: ${it.min} – ${it.max} ${it.u || ""}`); return; }
+          m.val = typed;
+        }
+        if (this._config.pin && !(this._pinUntil && Date.now() < this._pinUntil)) { m.lvl = "pin"; }
+        else { this._menuWrite(it, m.val); return; }
+      }
+    } else if (m.lvl === "pin") {
+      if (k === "esc") m.lvl = "e";
+      else if (k === "enter") {
+        const inp = this.shadowRoot.getElementById("m_pin");
+        if (inp && String(inp.value) === String(this._config.pin)) {
+          this._pinUntil = Date.now() + 10 * 60 * 1000; // stays unlocked for 10 minutes
+          this._menuWrite(it, m.val);
+          return;
+        }
+        this._toast("Wrong PIN");
+        if (inp) { inp.value = ""; inp.focus(); }
+        return;
+      }
+    }
+    this._update();
+  }
+
+  async _menuWrite(it, val) {
+    const t = this._menuTarget(it);
+    const raw = Math.round(val * Math.pow(10, it.d));
+    try {
+      await this._writeRegister(t.address, raw, t.slave);
+      this._toast(`${it.l} set to ${this._menuFmt(it, val)} ${it.u || ""}`);
+      const ent = this._menuEntity(it);
+      if (this._hass.states[ent]) this._hass.callService("homeassistant", "update_entity", { entity_id: ent }).catch(() => {});
+    } catch (e) {
+      this._toast(`${it.l}: write failed — ${e.message || e}`);
+    }
+    this._m.lvl = "i";
+    this._update();
+  }
+
+  _menuHtml() {
+    const m = this._m;
+    const groups = this._menuGroups();
+    if (!groups.length) return `<div class="msg"><div>No settings menu</div><div class="small">Add the PLC settings (plc:) to the card</div></div>`;
+    m.g = Math.min(m.g, groups.length - 1);
+    const g = groups[m.g];
+    m.i = Math.min(m.i, g.i.length - 1);
+    const it = g.i[m.i];
+    const win = (sel, n, size) => { const top = Math.max(0, Math.min(sel - Math.floor(size / 2), n - size)); return [top, Math.min(n, top + size)]; };
+    if (m.lvl === "g") {
+      const [a, b] = win(m.g, groups.length, 6);
+      return `<div class="mn">${groups.slice(a, b).map((x, j) =>
+        `<div class="mr ${a + j === m.g ? "sel" : ""}" data-mi="${a + j}"><span>${this._esc_(x.t)}</span><span>›</span></div>`).join("")}
+        <div class="mh">▲▼ choose · ENTER open · ESC back</div></div>`;
+    }
+    if (m.lvl === "i") {
+      const [a, b] = win(m.i, g.i.length, 5);
+      return `<div class="mn"><div class="mt">${this._esc_(g.t)}</div>${g.i.slice(a, b).map((x, j) => {
+        const cv = this._menuValue(x);
+        const val = cv.missing ? "n/a" : cv.na ? "—" : this._menuFmt(x, cv.v);
+        return `<div class="mr ${a + j === m.i ? "sel" : ""}" data-mi="${a + j}"><span>${this._esc_(x.l)}</span><span>${this._esc_(val)}${x.u && !x.opts ? " " + this._esc_(x.u) : ""}${x.ro ? " 🔒" : ""}</span></div>`;
+      }).join("")}</div>`;
+    }
+    if (m.lvl === "e") {
+      const cv = this._menuValue(it);
+      const now = cv.v !== undefined ? this._menuFmt(it, cv.v) : "—";
+      return `<div class="mn me"><div class="mt">${this._esc_(it.l)}</div>
+        ${it.opts
+          ? `<div class="mbigv">${this._esc_(this._menuFmt(it, m.val))}</div>`
+          : `<div class="mrow"><input id="m_in" class="min" inputmode="decimal" autocomplete="off"><span>${this._esc_(it.u || "")}</span></div>
+             <div class="mh">range ${it.min} – ${it.max} · step <b id="m_step">${this._menuFmt(it, m.step)}</b> (◀▶)</div>`}
+        <div class="mh">now ${this._esc_(now)} · ENTER save · ESC cancel</div></div>`;
+    }
+    return `<div class="mn me"><div class="mt">ENTER PIN</div>
+      <div class="mrow"><input id="m_pin" class="min" type="password" inputmode="numeric" autocomplete="off"></div>
+      <div class="mh">to save ${this._esc_(it.l)} = ${this._esc_(this._menuFmt(it, m.val))} ${this._esc_(it.u || "")}</div></div>`;
+  }
+
+  _menuAfterRender() {
+    const m = this._m;
+    if (!m) return;
+    const groups = this._menuGroups();
+    const it = groups[m.g] && groups[m.g].i[m.i];
+    const inp = this.shadowRoot.getElementById(m.lvl === "pin" ? "m_pin" : "m_in");
+    if (!inp || !it) return;
+    if (m.lvl === "e") inp.value = this._menuFmt(it, m.val);
+    inp.addEventListener("keydown", (ev) => {
+      if (ev.key === "Enter") { ev.preventDefault(); this._menuKey("enter"); }
+      else if (ev.key === "Escape") { ev.preventDefault(); this._menuKey("esc"); }
+    });
+    if (m.lvl === "pin") setTimeout(() => inp.focus(), 50);
   }
 
   _line(key, label, value, unit, opts = {}) {
@@ -1207,7 +1402,7 @@ class DeltaCP2000Card extends HTMLElement {
     set("t_mode", mode);
     set("t_dir", DIRS[dir]);
     set("t_run", progStatus || (sw !== null ? RUN_STATES[run] : running ? "RUN" : "STOP"));
-    set("t_page", faulted ? "FAULT" : commsLost ? "----" : PAGE_TITLES[this._page]);
+    set("t_page", this._page === "menu" && !commsLost ? "MENU" : faulted ? "FAULT" : commsLost ? "----" : PAGE_TITLES[this._page] || "");
     for (const k of ["f1", "f2", "f3", "f4"]) {
       const el = $(`sb_${k}`);
       el.textContent = this._keyLabel(k);
@@ -1226,6 +1421,8 @@ class DeltaCP2000Card extends HTMLElement {
         : modbus
           ? `<div class="msg"><div class="mbig">NO COMMS</div><div>Check RS-485 link</div><div>SG+ / SG- / power</div></div>`
           : `<div class="msg"><div class="mbig">NO DATA</div><div>Sensor unavailable:</div><div class="small">${this._esc_(keyId)}</div></div>`;
+    } else if (this._page === "menu" && this._m) {
+      html = this._menuHtml();
     } else if (faulted) {
       const fl = fcode > 0 ? FAULTS[fcode] : null;
       const desc = faultText ? this._esc_(faultText) : fl ? this._esc_(fl[1]) : `Fault code ${fcode}`;
@@ -1323,7 +1520,8 @@ class DeltaCP2000Card extends HTMLElement {
     if (html !== this._lastHtml) {
       $("screen").innerHTML = html;
       this._lastHtml = html;
-      this._fitScreen();
+      if (this._page === "menu") this._menuAfterRender();
+      else this._fitScreen();
     }
     if (!this._fitRO && window.ResizeObserver) {   // phone turned / card resized: fit the numbers again
       this._fitRO = new ResizeObserver(() => this._fitScreen());
@@ -1466,6 +1664,23 @@ class DeltaCP2000Card extends HTMLElement {
       .softbar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; padding: 0 3px 3px; font-size: 11px; }
       .softbar span { text-align: center; border: 1.5px solid var(--lcd-ink); border-radius: 2px; padding: 1px 2px; cursor: pointer; overflow: hidden; white-space: nowrap; text-overflow: clip; max-width: 100%; }
       .softbar span.act { background: var(--lcd-ink); color: var(--lcd-back2); }
+
+      /* ---------- settings menu ---------- */
+      .mn { display: flex; flex-direction: column; gap: 1px; font-size: 13px; }
+      .mn .mt { background: var(--lcd-ink); color: var(--lcd-back2); padding: 1px 4px; font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .mn .mr { display: flex; justify-content: space-between; gap: 8px; padding: 1px 4px; cursor: pointer; white-space: nowrap; }
+      .mn .mr span:first-child { overflow: hidden; text-overflow: ellipsis; }
+      .mn .mr.sel { background: var(--lcd-ink); color: var(--lcd-back2); }
+      .mn .mh { font-size: 10px; opacity: .8; padding: 1px 4px; }
+      .mn.me { gap: 4px; }
+      .mn .mrow { display: flex; align-items: baseline; justify-content: center; gap: 6px; font-size: 16px; }
+      .mn .min {
+        width: 9ch; font: inherit; font-size: 26px; font-weight: 700; text-align: right; color: var(--lcd-ink);
+        background: transparent; border: none; border-bottom: 2px solid var(--lcd-ink); outline: none; padding: 0 2px;
+        animation: lcdblink 1s steps(1) infinite;
+      }
+      .mn .min:focus { animation: none; }
+      .mn .mbigv { text-align: center; font-size: 26px; animation: lcdblink 1s steps(1) infinite; }
 
       /* ---------- pump / PID screen ---------- */
       .lcd.full .top, .lcd.full .softbar { display: none; }

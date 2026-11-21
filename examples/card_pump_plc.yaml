@@ -4,6 +4,7 @@ type: custom:delta-cp2000-card
 mode: modbus
 name: Single Pump
 max_frequency: 50
+pin: "1234"        # PIN for changing settings in MENU (change it! empty = no PIN)
 default_page: main
 setpoint_type: pressure
 p_min: 0
