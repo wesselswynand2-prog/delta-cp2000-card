@@ -13,7 +13,7 @@
  *   2101H (8449)  read   drive status word
  */
 
-const CARD_VERSION = "1.11.0";
+const CARD_VERSION = "1.11.1";
 
 // Hamlet Elektries logo (white, transparent background) — built in so no upload is needed.
 const HAMLET_LOGO =
@@ -1539,11 +1539,12 @@ class DeltaCP2000Card extends HTMLElement {
     if (html !== this._lastHtml) {
       $("screen").innerHTML = html;
       this._lastHtml = html;
+      this._textZoomFix();
       if (this._page === "menu") this._menuAfterRender();
       else this._fitScreen();
     }
     if (!this._fitRO && window.ResizeObserver) {   // phone turned / card resized: fit the numbers again
-      this._fitRO = new ResizeObserver(() => this._fitScreen());
+      this._fitRO = new ResizeObserver(() => { this._textZoomFix(); this._fitScreen(); });
       this._fitRO.observe($("lcd"));
     }
 
@@ -1598,6 +1599,36 @@ class DeltaCP2000Card extends HTMLElement {
   }
 
   _css() {
+    return this._cssRaw().replace(/font-size:\s*([\d.]+)px/g, "font-size: calc($1px * var(--tz, 1))");
+  }
+
+  // Phones with a big system font size (or the HA app's text zoom) blow up all text but not the boxes
+  // around it. Measure how much bigger text is drawn than asked, and scale the card's text back by that.
+  _textZoomFix() {
+    const root = this.shadowRoot;
+    if (!root) return;
+    const opt = this._config.text_zoom_fix;
+    let z = 1;
+    if (typeof opt === "number" && opt > 0) z = 1 / opt;          // manual: text_zoom_fix: 0.8 = 80 % text
+    else if (opt !== false && opt !== "off") {
+      const probe = document.createElement("span");
+      probe.textContent = "0000000000";
+      probe.style.cssText = "position:absolute;visibility:hidden;left:-9999px;top:0;white-space:nowrap;" +
+        "font:400 100px 'DejaVu Sans Mono','Droid Sans Mono','Roboto Mono','Consolas',monospace;letter-spacing:0;line-height:1";
+      root.appendChild(probe);
+      const cs = parseFloat(getComputedStyle(probe).fontSize) / 100;      // some engines report the boosted size
+      const w = probe.getBoundingClientRect().width / 602;                  // monospace digits are ~0.6 em wide
+      probe.remove();
+      z = Math.max(cs || 1, w || 1);
+      if (!(z > 1.08 && z < 4)) z = 1;                                      // ignore small font differences
+    }
+    if (z !== this._tz) {
+      this._tz = z;
+      this.style.setProperty("--tz", (1 / z).toFixed(3));
+    }
+  }
+
+  _cssRaw() {
     return `
       :host {
         --vfd-accent: var(--hamlet-accent, #1e7fd8);

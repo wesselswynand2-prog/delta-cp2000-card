@@ -153,6 +153,7 @@ control:
 | `confirm_actions` | `true` | Tap twice for RUN / RESET / direction |
 | `default_page` | `main` | LCD page shown first: main, power, motor, info, all |
 | `keys` | see below | What F1–F4, MENU, HAND and AUTO do |
+| `text_zoom_fix` | auto | Phones with a large font size: the card shrinks its text back automatically. Set a number (e.g. `0.7`) to force a text size, or `off` to disable |
 
 Accent colour follows the theme variable `--hamlet-accent` (default blue).
 
