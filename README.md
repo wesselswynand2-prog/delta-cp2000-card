@@ -198,9 +198,10 @@ For CP2000 drives running the Hamlet *Single Pump V9.0.1* PLC program (built-in 
 |---|---|
 | PRESENT VALUE | D62 (0.00 bar) |
 | SETPOINT | shown from D296, written to D304 (0.00 bar) |
-| SLEEP / BOOSTING / NO LOAD / FAULT (pump screen + status pill + ERR light) | M303 / M55 / M321 / M352 |
+| SLEEP / BOOSTING / NO LOAD / FAULT (pump screen + status pill + ERR light) | M303 / M50 / M321 / M352 |
 | APP CONTROL key (cycles PANEL → APP AUTO → APP MAN, tap twice) | D394 |
-| INFO page: kW, kWh, runtime | D362, D366, D398/D397 |
+| RUN / STOP / RESET (in App mode) | D395 = 1 / 0 / 2 (`plc: run_register: 4491`) |
+| INFO page: kW, kWh, runtime hours/min | D362, D366, D398/D397 |
 
 While the program is in **PANEL** mode (D394 = 0) the card blocks RUN / setpoint / reset; STOP always works.
 Register meanings were read from the keypad screen file — verify on the first install against the drive's keypad.

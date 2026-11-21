@@ -23,7 +23,7 @@ entities:
   pressure_setpoint: sensor.pump_setpoint       # D296 SETPOINT (written via D304)
   output_power: sensor.pump_power               # D362
   energy: sensor.pump_energy                    # D366
-  run_days: sensor.pump_runtime_days            # D398
+  run_hours: sensor.pump_runtime_hours          # D398
   run_minutes: sensor.pump_runtime_minutes      # D397
   sleep: binary_sensor.pump_sleep               # M303
   boost: binary_sensor.pump_boosting            # M55
@@ -38,8 +38,9 @@ plc:
   setpoint_register: 4400   # D304
   setpoint_scale: 100       # 0.00 bar
   app_mode_register: 4490   # D394
+  run_register: 4491        # D395  RUN = 1, STOP = 0, RESET = 2
 boxes:
-  box1: { entity: sensor.pump_d318, label: D318, decimals: 1 }
+  box1: { entity: sensor.pump_d318, label: COUNT DOWN, decimals: 1 }
   box2: { entity: sensor.pump_power, label: POWER }
 keys:
   f1: { label: MAIN, function: page_main }

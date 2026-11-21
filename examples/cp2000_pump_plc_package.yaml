@@ -12,6 +12,9 @@
 #   slave 2 = the drive's built-in PLC    (parameter 09-35, Delta default 2)
 #   If 09-35 is not 2, change EVERY "slave: 2" below (Find & Replace "slave: 2").
 #
+# The card STARTS / STOPS / RESETS the pump by writing D395 (APP_START_AND_RESET) = 1 / 0 / 2
+#   — only works in App mode (D394 = 1 APP AUTO or 2 APP MAN); in PANEL mode the program ignores it.
+#
 # PLC register map (Delta): D<n> = 4096 + n,  M<n> = 2048 + n
 # Drive parameter GG-NN = GG*256 + NN
 #
@@ -126,7 +129,7 @@ modbus:
       - name: Pump Setpoint
         unique_id: pump_plc_setpoint
         slave: 2
-        address: 4392               # D296 SETPOINT as shown on the keypad (0.00 bar)
+        address: 4392               # D296 SP_DISPLAY — SETPOINT as shown on the keypad (0.00 bar)
                                     # (the card WRITES new setpoints to D304 = 4400; the program copies it to D296)
         input_type: holding
         data_type: int16
@@ -139,7 +142,7 @@ modbus:
       - name: Pump D318
         unique_id: pump_plc_d318
         slave: 2
-        address: 4414               # D318 small box under PRESENT VALUE (0.0)
+        address: 4414               # D318 COUNT_DOWN_DISPLAY (small box under PRESENT VALUE, 0.0)
         input_type: holding
         data_type: int16
         scale: 0.1
@@ -149,7 +152,7 @@ modbus:
       - name: Pump App Control Mode
         unique_id: pump_plc_app_mode
         slave: 2
-        address: 4490               # D394  0 = PANEL, 1 = APP AUTO, 2 = APP MAN
+        address: 4490               # D394 APP_START_MODE  0 = PANEL, 1 = APP AUTO, 2 = APP MAN
         input_type: holding
         data_type: uint16
         scan_interval: 5
@@ -157,7 +160,7 @@ modbus:
       - name: Pump Power
         unique_id: pump_plc_kw
         slave: 2
-        address: 4458               # D362 INFO page (0.0) — check: kW?
+        address: 4458               # D362 OUTPUT_POWER
         input_type: holding
         data_type: uint16
         scale: 0.1
@@ -170,7 +173,7 @@ modbus:
       - name: Pump Energy
         unique_id: pump_plc_kwh
         slave: 2
-        address: 4462               # D366 INFO page (0.0) — check: kWh?
+        address: 4462               # D366 OUTPUT_PWR_CONSUMPTION
         input_type: holding
         data_type: uint16
         scale: 0.1
@@ -180,29 +183,31 @@ modbus:
         state_class: total_increasing
         scan_interval: 60
 
-      - name: Pump INFO D364
+      - name: Pump Heatsink Temperature
         unique_id: pump_plc_d364
         slave: 2
-        address: 4460               # D364 INFO page 3rd value (0.0) — check what it is
+        address: 4460               # D364 HEATSINK_TEMP
         input_type: holding
         data_type: uint16
         scale: 0.1
         precision: 1
+        unit_of_measurement: "°C"
+        device_class: temperature
         scan_interval: 60
 
-      - name: Pump Runtime Days
-        unique_id: pump_plc_run_days
+      - name: Pump Runtime Hours
+        unique_id: pump_plc_run_hours
         slave: 2
-        address: 4494               # D398
+        address: 4494               # D398 ACCUM_HOUR
         input_type: holding
         data_type: uint16
-        unit_of_measurement: d
+        unit_of_measurement: h
         scan_interval: 300
 
       - name: Pump Runtime Minutes
         unique_id: pump_plc_run_minutes
         slave: 2
-        address: 4493               # D397
+        address: 4493               # D397 ACCUM_MIN
         input_type: holding
         data_type: uint16
         unit_of_measurement: min
@@ -359,7 +364,7 @@ modbus:
       - name: Pump D130
         unique_id: pump_d130
         slave: 2
-        address: 4226               # D130 Sleep (raw — card applies decimals)
+        address: 4226               # D130 Sleep (% of SP) (raw — card applies decimals)
         input_type: holding
         data_type: uint16
         scan_interval: 120
@@ -367,7 +372,7 @@ modbus:
       - name: Pump D140
         unique_id: pump_d140
         slave: 2
-        address: 4236               # D140 Wake (raw — card applies decimals)
+        address: 4236               # D140 Wake (% of SP) (raw — card applies decimals)
         input_type: holding
         data_type: uint16
         scan_interval: 120
@@ -471,7 +476,7 @@ modbus:
       - name: Pump D260
         unique_id: pump_d260
         slave: 2
-        address: 4356               # D260 Boost amps (raw — card applies decimals)
+        address: 4356               # D260 Boost freq (raw — card applies decimals)
         input_type: holding
         data_type: uint16
         scan_interval: 120
@@ -479,7 +484,7 @@ modbus:
       - name: Pump D123
         unique_id: pump_d123
         slave: 2
-        address: 4219               # D123 Boost freq (raw — card applies decimals)
+        address: 4219               # D123 Delay to boost (raw — card applies decimals)
         input_type: holding
         data_type: uint16
         scan_interval: 120
@@ -487,7 +492,7 @@ modbus:
       - name: Pump D110
         unique_id: pump_d110
         slave: 2
-        address: 4206               # D110 Boost delay (raw — card applies decimals)
+        address: 4206               # D110 Boost amps % (raw — card applies decimals)
         input_type: holding
         data_type: uint16
         scan_interval: 120
@@ -961,28 +966,28 @@ modbus:
       - name: Pump Sleep
         unique_id: pump_plc_sleep
         slave: 2
-        address: 2351               # M303  "SLEEP..."
+        address: 2351               # M303  SLEEP_DISPLAY
         input_type: coil
         scan_interval: 5
 
       - name: Pump Boosting
         unique_id: pump_plc_boost
         slave: 2
-        address: 2103               # M55   "Boosting" — check on site
+        address: 2098               # M50   BOOST_INDICATOR
         input_type: coil
         scan_interval: 5
 
       - name: Pump No Load
         unique_id: pump_plc_no_load
         slave: 2
-        address: 2369               # M321  "No Load" — check on site
+        address: 2369               # M321  UNDERAMPS_DETECTED ("No Load")
         input_type: coil
         scan_interval: 5
 
       - name: Pump Fault
         unique_id: pump_plc_fault
         slave: 2
-        address: 2400               # M352  "FAULT!!!" — check on site
+        address: 2400               # M352  FAULT_DISPLAY
         input_type: coil
         device_class: problem
         scan_interval: 5
