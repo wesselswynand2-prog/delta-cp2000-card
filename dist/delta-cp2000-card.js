@@ -13,7 +13,7 @@
  *   2101H (8449)  read   drive status word
  */
 
-const CARD_VERSION = "1.11.2";
+const CARD_VERSION = "1.12.0";
 
 // Hamlet Elektries logo (white, transparent background) — built in so no upload is needed.
 const HAMLET_LOGO =
@@ -166,6 +166,8 @@ const LABELS = {
   setpoint_scale: "Setpoint scale (100 = 0.00 bar)",
   app_mode_register: "App mode register (D394 = 4490)",
   run_register: "App start/stop/reset register (D395 = 4491)",
+  entity_prefix: "Menu sensors: program prefix (pump, pump2…)",
+  drive_prefix: "Menu sensors: drive prefix (vfd, vfd2…)",
   mode: "How does Home Assistant talk to the drive?",
   running: "Running (binary sensor / switch — on = running)",
   reverse: "Reverse (binary sensor / switch — on = REV)",
@@ -340,6 +342,8 @@ function buildSchema(config) {
           { name: "setpoint_scale", selector: { number: { min: 1, max: 1000, mode: "box" } } },
           { name: "app_mode_register", selector: { number: { min: 0, max: 65535, mode: "box" } } },
           { name: "run_register", selector: { number: { min: 0, max: 65535, mode: "box" } } },
+          { name: "entity_prefix", selector: { text: {} } },
+          { name: "drive_prefix", selector: { text: {} } },
         ],
       }],
     }] : []),
@@ -1143,7 +1147,10 @@ class DeltaCP2000Card extends HTMLElement {
   }
 
   _menuEntity(it) {
-    return it.r.startsWith("D") ? `sensor.pump_d${it.r.slice(1)}` : `sensor.vfd_p${it.r.slice(1).replace("-", "_")}`;
+    // pump 1 uses sensor.pump_d130 / sensor.vfd_p01_00; a second pump e.g. sensor.pump2_d130 / sensor.vfd2_p01_00
+    const p = this._config.plc || {};
+    const plcPre = p.entity_prefix || "pump", drvPre = p.drive_prefix || "vfd";
+    return it.r.startsWith("D") ? `sensor.${plcPre}_d${it.r.slice(1)}` : `sensor.${drvPre}_p${it.r.slice(1).replace("-", "_")}`;
   }
 
   _menuValue(it) {

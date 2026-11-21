@@ -1,0 +1,51 @@
+# PUMP 2 card (drive 3 / PLC 4) for a CP2000 running the Hamlet "Single Pump V9.0.1" PLC program
+# (use together with examples/cp2000_two_pumps_package.yaml)
+type: custom:delta-cp2000-card
+mode: modbus
+name: Pump 2
+max_frequency: 50
+pin: "1234"        # PIN for changing settings in MENU (change it! empty = no PIN)
+default_page: main
+setpoint_type: pressure
+p_min: 0
+p_max: 10
+p_step: 0.1
+p_unit: bar
+entities:
+  status: sensor.vfd2_status_word
+  fault: sensor.vfd2_fault_code
+  output_frequency: sensor.vfd2_output_frequency
+  output_current: sensor.vfd2_output_current
+  output_voltage: sensor.vfd2_output_voltage
+  dc_bus_voltage: sensor.vfd2_dc_bus_voltage
+  igbt_temperature: sensor.vfd2_igbt_temperature
+  pid_feedback: sensor.pump2_pressure            # D62  PRESENT VALUE
+  pressure_setpoint: sensor.pump2_setpoint       # D296 SETPOINT (written via D304)
+  output_power: sensor.pump2_power               # D362
+  energy: sensor.pump2_energy                    # D366
+  run_hours: sensor.pump2_runtime_hours          # D398
+  run_minutes: sensor.pump2_runtime_minutes      # D397
+  sleep: binary_sensor.pump2_sleep               # M303
+  boost: binary_sensor.pump2_boosting            # M50
+  no_load: binary_sensor.pump2_no_load           # M321
+  pump_fault: binary_sensor.pump2_fault          # M352
+  app_mode: sensor.pump2_app_control_mode        # D394
+control:
+  hub: vfd
+  slave: 3          # drive address (09-00)
+plc:
+  slave: 4          # PLC address (09-35)
+  entity_prefix: pump2      # menu sensors sensor.pump2_d...
+  drive_prefix: vfd2        # menu sensors sensor.vfd2_p...
+  setpoint_register: 4400   # D304
+  setpoint_scale: 100       # 0.00 bar
+  app_mode_register: 4490   # D394
+  run_register: 4491        # D395  RUN = 1, STOP = 0, RESET = 2
+boxes:
+  box1: { entity: sensor.pump2_d318, label: COUNT DOWN, decimals: 1 }
+  box2: { entity: sensor.pump2_power, label: POWER }
+keys:
+  f1: { label: MAIN, function: page_main }
+  f2: { label: POWR, function: page_power }
+  f3: { label: MOTR, function: page_motor }
+  f4: { label: INFO, function: page_info }

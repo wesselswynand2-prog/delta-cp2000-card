@@ -207,6 +207,17 @@ For CP2000 drives running the Hamlet *Single Pump V9.0.1* PLC program (built-in 
 While the program is in **PANEL** mode (D394 = 0) the card blocks RUN / setpoint / reset; STOP always works.
 Register meanings were read from the keypad screen file — verify on the first install against the drive's keypad.
 
+### Two pumps in one pump house
+
+Both drives on one RS-485 line / one Waveshare, every address different:
+
+| | Drive (09-00) | PLC (09-35) | Entities |
+|---|---|---|---|
+| Pump 1 | 1 | 2 | `sensor.pump_*`, `sensor.vfd_*` |
+| Pump 2 | 3 | 4 | `sensor.pump2_*`, `sensor.vfd2_*` |
+
+Use `examples/cp2000_two_pumps_package.yaml` (instead of the single-pump file) and `examples/card_pump2_plc.yaml` for the second card. The second card's `plc:` has `entity_prefix: pump2` and `drive_prefix: vfd2` so its MENU reads Pump 2's settings.
+
 ## Settings menu (MENU key)
 
 **MENU** opens a settings menu on the LCD, like the drive's own keypad:

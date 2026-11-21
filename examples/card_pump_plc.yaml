@@ -26,7 +26,7 @@ entities:
   run_hours: sensor.pump_runtime_hours          # D398
   run_minutes: sensor.pump_runtime_minutes      # D397
   sleep: binary_sensor.pump_sleep               # M303
-  boost: binary_sensor.pump_boosting            # M55
+  boost: binary_sensor.pump_boosting            # M50
   no_load: binary_sensor.pump_no_load           # M321
   pump_fault: binary_sensor.pump_fault          # M352
   app_mode: sensor.pump_app_control_mode        # D394
