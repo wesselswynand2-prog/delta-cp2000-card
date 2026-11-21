@@ -18,7 +18,7 @@
 # PLC register map (Delta): D<n> = 4096 + n,  M<n> = 2048 + n
 # Drive parameter GG-NN = GG*256 + NN
 #
-# The "MENU SETTINGS" sensors feed the card's MENU key (read every 2 min, refreshed right after a change).
+# The "MENU SETTINGS" sensors feed the card's MENU key (read every 10 min, refreshed right after a change).
 # ---------------------------------------------------------------------------
 
 modbus:
@@ -26,7 +26,7 @@ modbus:
     type: tcp                       # Waveshare protocol = Modbus TCP to RTU
     host: 192.168.10.254
     port: 510
-    timeout: 3
+    timeout: 2               # wait max 2 s for an answer (a slow drive no longer blocks the whole line)
     delay: 1
 
     sensors:
@@ -45,7 +45,7 @@ modbus:
         address: 8449               # 2101H
         input_type: holding
         data_type: uint16
-        scan_interval: 3
+        scan_interval: 5
 
       - name: VFD Output Frequency
         unique_id: vfd_output_frequency
@@ -58,7 +58,7 @@ modbus:
         unit_of_measurement: Hz
         device_class: frequency
         state_class: measurement
-        scan_interval: 3
+        scan_interval: 5
 
       - name: VFD Output Current
         unique_id: vfd_output_current
@@ -71,7 +71,7 @@ modbus:
         unit_of_measurement: A
         device_class: current
         state_class: measurement
-        scan_interval: 3
+        scan_interval: 5
 
       - name: VFD Output Voltage
         unique_id: vfd_output_voltage
@@ -124,7 +124,7 @@ modbus:
         unit_of_measurement: bar
         device_class: pressure
         state_class: measurement
-        scan_interval: 3
+        scan_interval: 5
 
       - name: Pump Setpoint
         unique_id: pump_plc_setpoint
@@ -231,7 +231,7 @@ modbus:
         address: 4127               # D31 SP1 (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D32
         unique_id: pump_d32
@@ -239,7 +239,7 @@ modbus:
         address: 4128               # D32 SP2 (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D33
         unique_id: pump_d33
@@ -247,7 +247,7 @@ modbus:
         address: 4129               # D33 SP3 (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D34
         unique_id: pump_d34
@@ -255,7 +255,7 @@ modbus:
         address: 4130               # D34 SP4 (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D35
         unique_id: pump_d35
@@ -263,7 +263,7 @@ modbus:
         address: 4131               # D35 SP5 (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D36
         unique_id: pump_d36
@@ -271,7 +271,7 @@ modbus:
         address: 4132               # D36 SP6 (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D37
         unique_id: pump_d37
@@ -279,7 +279,7 @@ modbus:
         address: 4133               # D37 SP7 (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D38
         unique_id: pump_d38
@@ -287,7 +287,7 @@ modbus:
         address: 4134               # D38 SP8 (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D39
         unique_id: pump_d39
@@ -295,7 +295,7 @@ modbus:
         address: 4135               # D39 SP9 (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D40
         unique_id: pump_d40
@@ -303,7 +303,7 @@ modbus:
         address: 4136               # D40 SP10 (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D41
         unique_id: pump_d41
@@ -311,7 +311,7 @@ modbus:
         address: 4137               # D41 SP11 (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D42
         unique_id: pump_d42
@@ -319,7 +319,7 @@ modbus:
         address: 4138               # D42 SP12 (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D43
         unique_id: pump_d43
@@ -327,7 +327,7 @@ modbus:
         address: 4139               # D43 SP13 (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D44
         unique_id: pump_d44
@@ -335,7 +335,7 @@ modbus:
         address: 4140               # D44 SP14 (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D45
         unique_id: pump_d45
@@ -343,7 +343,7 @@ modbus:
         address: 4141               # D45 SP15 (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D18
         unique_id: pump_d18
@@ -351,7 +351,7 @@ modbus:
         address: 4114               # D18 Max pressure (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D178
         unique_id: pump_d178
@@ -359,7 +359,7 @@ modbus:
         address: 4274               # D178 Feedback det time (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D130
         unique_id: pump_d130
@@ -367,7 +367,7 @@ modbus:
         address: 4226               # D130 Sleep (% of SP) (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D140
         unique_id: pump_d140
@@ -375,7 +375,7 @@ modbus:
         address: 4236               # D140 Wake (% of SP) (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D176
         unique_id: pump_d176
@@ -383,7 +383,7 @@ modbus:
         address: 4272               # D176 P (default 1.0) (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D172
         unique_id: pump_d172
@@ -391,7 +391,7 @@ modbus:
         address: 4268               # D172 I (default 1.00) (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D174
         unique_id: pump_d174
@@ -399,7 +399,7 @@ modbus:
         address: 4270               # D174 D (default 0.00) (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D2
         unique_id: pump_d2
@@ -407,7 +407,7 @@ modbus:
         address: 4098               # D2 Rated amps (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D272
         unique_id: pump_d272
@@ -415,7 +415,7 @@ modbus:
         address: 4368               # D272 Min speed (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D250
         unique_id: pump_d250
@@ -423,7 +423,7 @@ modbus:
         address: 4346               # D250 No load amps (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D252
         unique_id: pump_d252
@@ -431,7 +431,7 @@ modbus:
         address: 4348               # D252 No load delay (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D249
         unique_id: pump_d249
@@ -439,7 +439,7 @@ modbus:
         address: 4345               # D249 Direction (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D209
         unique_id: pump_d209
@@ -447,7 +447,7 @@ modbus:
         address: 4305               # D209 OC on accel (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D205
         unique_id: pump_d205
@@ -455,7 +455,7 @@ modbus:
         address: 4301               # D205 OC on normal (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D239
         unique_id: pump_d239
@@ -463,7 +463,7 @@ modbus:
         address: 4335               # D239 Boost enable (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D270
         unique_id: pump_d270
@@ -471,7 +471,7 @@ modbus:
         address: 4366               # D270 Boost on (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D260
         unique_id: pump_d260
@@ -479,7 +479,7 @@ modbus:
         address: 4356               # D260 Boost freq (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D123
         unique_id: pump_d123
@@ -487,7 +487,7 @@ modbus:
         address: 4219               # D123 Delay to boost (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D110
         unique_id: pump_d110
@@ -495,7 +495,7 @@ modbus:
         address: 4206               # D110 Boost amps % (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D122
         unique_id: pump_d122
@@ -503,7 +503,7 @@ modbus:
         address: 4218               # D122 Boost acc (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D124
         unique_id: pump_d124
@@ -511,7 +511,7 @@ modbus:
         address: 4220               # D124 Boost dec (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D16
         unique_id: pump_d16
@@ -519,7 +519,7 @@ modbus:
         address: 4112               # D16 Dry run time (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D20
         unique_id: pump_d20
@@ -527,7 +527,7 @@ modbus:
         address: 4116               # D20 Auto restart (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D127
         unique_id: pump_d127
@@ -535,7 +535,7 @@ modbus:
         address: 4223               # D127 Restart hours (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D125
         unique_id: pump_d125
@@ -543,7 +543,7 @@ modbus:
         address: 4221               # D125 Restart min (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D129
         unique_id: pump_d129
@@ -551,7 +551,7 @@ modbus:
         address: 4225               # D129 Restart sec (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D152
         unique_id: pump_d152
@@ -559,7 +559,7 @@ modbus:
         address: 4248               # D152 No flow hertz (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D150
         unique_id: pump_d150
@@ -567,7 +567,7 @@ modbus:
         address: 4246               # D150 No flow det time (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D322
         unique_id: pump_d322
@@ -575,7 +575,7 @@ modbus:
         address: 4418               # D322 Burst det time (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D324
         unique_id: pump_d324
@@ -583,7 +583,7 @@ modbus:
         address: 4420               # D324 Burst SP (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D96
         unique_id: pump_d96
@@ -591,7 +591,7 @@ modbus:
         address: 4192               # D96 Prime stay on (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D164
         unique_id: pump_d164
@@ -599,7 +599,7 @@ modbus:
         address: 4260               # D164 Priming time (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D158
         unique_id: pump_d158
@@ -607,7 +607,7 @@ modbus:
         address: 4254               # D158 Fill time (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D166
         unique_id: pump_d166
@@ -615,7 +615,7 @@ modbus:
         address: 4262               # D166 Filling speed (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D126
         unique_id: pump_d126
@@ -623,7 +623,7 @@ modbus:
         address: 4222               # D126 Accel 1 (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D128
         unique_id: pump_d128
@@ -631,7 +631,7 @@ modbus:
         address: 4224               # D128 Decel (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D156
         unique_id: pump_d156
@@ -639,7 +639,7 @@ modbus:
         address: 4252               # D156 Accel 2 (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D148
         unique_id: pump_d148
@@ -647,7 +647,7 @@ modbus:
         address: 4244               # D148 Accel 2 time (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D154
         unique_id: pump_d154
@@ -655,7 +655,7 @@ modbus:
         address: 4250               # D154 Acc 2 start (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D144
         unique_id: pump_d144
@@ -663,7 +663,7 @@ modbus:
         address: 4240               # D144 Manual speed (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D266
         unique_id: pump_d266
@@ -671,7 +671,7 @@ modbus:
         address: 4362               # D266 Use auto acc/dec (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D332
         unique_id: pump_d332
@@ -679,7 +679,7 @@ modbus:
         address: 4428               # D332 Start hertz (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D336
         unique_id: pump_d336
@@ -687,7 +687,7 @@ modbus:
         address: 4432               # D336 Start time (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D334
         unique_id: pump_d334
@@ -695,7 +695,7 @@ modbus:
         address: 4430               # D334 Stop hertz (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D338
         unique_id: pump_d338
@@ -703,7 +703,7 @@ modbus:
         address: 4434               # D338 Stop time (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D342
         unique_id: pump_d342
@@ -711,7 +711,7 @@ modbus:
         address: 4438               # D342 No. of filters (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D348
         unique_id: pump_d348
@@ -719,7 +719,7 @@ modbus:
         address: 4444               # D348 % setpoint start (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D346
         unique_id: pump_d346
@@ -727,7 +727,7 @@ modbus:
         address: 4442               # D346 BF duration (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D344
         unique_id: pump_d344
@@ -735,7 +735,7 @@ modbus:
         address: 4440               # D344 BF interval (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D340
         unique_id: pump_d340
@@ -743,7 +743,7 @@ modbus:
         address: 4436               # D340 BF cycle time (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D358
         unique_id: pump_d358
@@ -751,7 +751,7 @@ modbus:
         address: 4454               # D358 Run time (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D220
         unique_id: pump_d220
@@ -759,7 +759,7 @@ modbus:
         address: 4316               # D220 Run on command (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D222
         unique_id: pump_d222
@@ -767,7 +767,7 @@ modbus:
         address: 4318               # D222 Forced OCSPM (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: Pump D394
         unique_id: pump_d394
@@ -775,7 +775,7 @@ modbus:
         address: 4490               # D394 App control (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       # ================= MENU SETTINGS: drive parameters (slave 1) =================
       - name: VFD P01-00
@@ -784,7 +784,7 @@ modbus:
         address: 256               # P01-00 01-00 Max output Hz (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: VFD P01-10
         unique_id: vfd_p01_10
@@ -792,7 +792,7 @@ modbus:
         address: 266               # P01-10 01-10 Upper limit (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: VFD P01-11
         unique_id: vfd_p01_11
@@ -800,7 +800,7 @@ modbus:
         address: 267               # P01-11 01-11 Lower limit (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: VFD P01-12
         unique_id: vfd_p01_12
@@ -808,7 +808,7 @@ modbus:
         address: 268               # P01-12 01-12 Accel time 1 (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: VFD P01-13
         unique_id: vfd_p01_13
@@ -816,7 +816,7 @@ modbus:
         address: 269               # P01-13 01-13 Decel time 1 (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: VFD P05-01
         unique_id: vfd_p05_01
@@ -824,7 +824,7 @@ modbus:
         address: 1281               # P05-01 05-01 Rated current (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: VFD P05-02
         unique_id: vfd_p05_02
@@ -832,7 +832,7 @@ modbus:
         address: 1282               # P05-02 05-02 Rated power (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: VFD P05-03
         unique_id: vfd_p05_03
@@ -840,7 +840,7 @@ modbus:
         address: 1283               # P05-03 05-03 Rated speed (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: VFD P05-04
         unique_id: vfd_p05_04
@@ -848,7 +848,7 @@ modbus:
         address: 1284               # P05-04 05-04 Poles (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: VFD P06-14
         unique_id: vfd_p06_14
@@ -856,7 +856,7 @@ modbus:
         address: 1550               # P06-14 06-14 Thermal time (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: VFD P08-00
         unique_id: vfd_p08_00
@@ -864,7 +864,7 @@ modbus:
         address: 2048               # P08-00 08-00 Feedback input (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: VFD P08-01
         unique_id: vfd_p08_01
@@ -872,7 +872,7 @@ modbus:
         address: 2049               # P08-01 08-01 P gain (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: VFD P08-02
         unique_id: vfd_p08_02
@@ -880,7 +880,7 @@ modbus:
         address: 2050               # P08-02 08-02 I time (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: VFD P08-03
         unique_id: vfd_p08_03
@@ -888,7 +888,7 @@ modbus:
         address: 2051               # P08-03 08-03 D time (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: VFD P08-04
         unique_id: vfd_p08_04
@@ -896,7 +896,7 @@ modbus:
         address: 2052               # P08-04 08-04 I upper limit (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: VFD P08-05
         unique_id: vfd_p08_05
@@ -904,7 +904,7 @@ modbus:
         address: 2053               # P08-05 08-05 Output limit (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: VFD P08-65
         unique_id: vfd_p08_65
@@ -912,7 +912,7 @@ modbus:
         address: 2113               # P08-65 08-65 Target source (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: VFD P00-20
         unique_id: vfd_p00_20
@@ -920,7 +920,7 @@ modbus:
         address: 20               # P00-20 00-20 Freq source (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: VFD P00-21
         unique_id: vfd_p00_21
@@ -928,7 +928,7 @@ modbus:
         address: 21               # P00-21 00-21 Run source (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: VFD P09-00
         unique_id: vfd_p09_00
@@ -936,7 +936,7 @@ modbus:
         address: 2304               # P09-00 09-00 Drive address (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: VFD P09-01
         unique_id: vfd_p09_01
@@ -944,7 +944,7 @@ modbus:
         address: 2305               # P09-01 09-01 Baud (kbps) (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: VFD P09-04
         unique_id: vfd_p09_04
@@ -952,7 +952,7 @@ modbus:
         address: 2308               # P09-04 09-04 Protocol (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
       - name: VFD P09-35
         unique_id: vfd_p09_35
@@ -960,7 +960,7 @@ modbus:
         address: 2339               # P09-35 09-35 PLC address (raw — card applies decimals)
         input_type: holding
         data_type: uint16
-        scan_interval: 120
+        scan_interval: 600
 
     binary_sensors:
       - name: Pump Sleep
@@ -968,21 +968,21 @@ modbus:
         slave: 2
         address: 2351               # M303  SLEEP_DISPLAY
         input_type: coil
-        scan_interval: 5
+        scan_interval: 10
 
       - name: Pump Boosting
         unique_id: pump_plc_boost
         slave: 2
         address: 2098               # M50   BOOST_INDICATOR
         input_type: coil
-        scan_interval: 5
+        scan_interval: 10
 
       - name: Pump No Load
         unique_id: pump_plc_no_load
         slave: 2
         address: 2369               # M321  UNDERAMPS_DETECTED ("No Load")
         input_type: coil
-        scan_interval: 5
+        scan_interval: 10
 
       - name: Pump Fault
         unique_id: pump_plc_fault
@@ -990,4 +990,4 @@ modbus:
         address: 2400               # M352  FAULT_DISPLAY
         input_type: coil
         device_class: problem
-        scan_interval: 5
+        scan_interval: 10
