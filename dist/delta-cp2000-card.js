@@ -13,7 +13,7 @@
  *   2101H (8449)  read   drive status word
  */
 
-const CARD_VERSION = "1.12.0";
+const CARD_VERSION = "1.13.0";
 
 // Hamlet Elektries logo (white, transparent background) — built in so no upload is needed.
 const HAMLET_LOGO =
@@ -1892,6 +1892,272 @@ window.customCards.push({
   description: "Keypad-style status and control for a Delta CP2000 drive over Modbus (Hamlet Elektries)",
   preview: true,
   documentationURL: "https://github.com/wesselswynand2-prog/delta-cp2000-card",
+});
+
+/* =====================================================================================
+ * Pump House card — master / slave (assist) controller for two pumps
+ * type: custom:hamlet-pump-house-card
+ * Works with examples/pump_house_controller.yaml (helpers + automation).
+ * ===================================================================================== */
+
+const PH_DEFAULTS = {
+  name: "Pump House",
+  pumps: [
+    { name: "Pump 1", hz: "sensor.vfd_output_frequency", amps: "sensor.vfd_output_current", pressure: "sensor.pump_pressure",
+      setpoint: "sensor.pump_setpoint", fault: "binary_sensor.pump_fault", sleep: "binary_sensor.pump_sleep", app_mode: "sensor.pump_app_control_mode" },
+    { name: "Pump 2", hz: "sensor.vfd2_output_frequency", amps: "sensor.vfd2_output_current", pressure: "sensor.pump2_pressure",
+      setpoint: "sensor.pump2_setpoint", fault: "binary_sensor.pump2_fault", sleep: "binary_sensor.pump2_sleep", app_mode: "sensor.pump2_app_control_mode" },
+  ],
+  controller: {
+    mode: "input_select.pump_house_mode",
+    start_hz: "input_number.pump_house_start_hz",
+    start_delay: "input_number.pump_house_start_delay",
+    stop_hz: "input_number.pump_house_stop_hz",
+    stop_delay: "input_number.pump_house_stop_delay",
+    status: "sensor.pump_house_status",
+  },
+  max_frequency: 50,
+};
+
+class HamletPumpHouseCard extends HTMLElement {
+  static getStubConfig() {
+    return { name: "Pump House" };
+  }
+
+  setConfig(config) {
+    const pumps = (config.pumps || []).length ? config.pumps : PH_DEFAULTS.pumps;
+    this._config = {
+      ...PH_DEFAULTS,
+      ...config,
+      pumps: [0, 1].map((i) => ({ ...PH_DEFAULTS.pumps[i], ...(pumps[i] || {}) })),
+      controller: { ...PH_DEFAULTS.controller, ...(config.controller || {}) },
+    };
+    this._built = false;
+    if (this._hass) { this._render(); this._update(); }
+  }
+
+  set hass(h) {
+    this._hass = h;
+    if (!this._config) return;
+    if (!this._built) this._render();
+    this._update();
+  }
+
+  getCardSize() { return 6; }
+  getGridOptions() { return { columns: 12, min_columns: 6, rows: "auto" }; }
+
+  _st(id) { return id && this._hass ? this._hass.states[id] : undefined; }
+  _n(id) { const s = this._st(id); const v = s ? parseFloat(s.state) : NaN; return Number.isFinite(v) ? v : null; }
+  _on(id) { const s = this._st(id); return !!s && s.state === "on"; }
+  _toast(message) { this.dispatchEvent(new CustomEvent("hass-notification", { bubbles: true, composed: true, detail: { message } })); }
+  _esc(s) { return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+
+  _modes() {
+    const p = this._config.pumps;
+    return [
+      { v: "Independent", l1: "EACH ON", l2: "ITS OWN" },
+      { v: "Pump 1 master", l1: `${p[0].name.toUpperCase()}`, l2: "MASTER" },
+      { v: "Pump 2 master", l1: `${p[1].name.toUpperCase()}`, l2: "MASTER" },
+    ];
+  }
+
+  _unlocked() {
+    return !this._config.pin || (this._pinUntil && Date.now() < this._pinUntil);
+  }
+
+  _guard(fn) {
+    if (this._unlocked()) return fn();
+    this._pending = fn;
+    const row = this.shadowRoot.getElementById("pinrow");
+    row.classList.add("show");
+    const inp = this.shadowRoot.getElementById("pin");
+    inp.value = "";
+    setTimeout(() => inp.focus(), 50);
+  }
+
+  _checkPin() {
+    const inp = this.shadowRoot.getElementById("pin");
+    if (String(inp.value) === String(this._config.pin)) {
+      this._pinUntil = Date.now() + 10 * 60 * 1000;
+      this.shadowRoot.getElementById("pinrow").classList.remove("show");
+      const fn = this._pending; this._pending = null;
+      if (fn) fn();
+    } else {
+      this._toast("Wrong PIN");
+      inp.value = "";
+    }
+  }
+
+  _confirm(btn, fn) {
+    if (btn.dataset.armed === "1") {
+      btn.dataset.armed = ""; btn.classList.remove("armed"); clearTimeout(btn._t);
+      return fn();
+    }
+    this.shadowRoot.querySelectorAll(".armed").forEach((b) => { b.dataset.armed = ""; b.classList.remove("armed"); });
+    btn.dataset.armed = "1"; btn.classList.add("armed");
+    btn._t = setTimeout(() => { btn.dataset.armed = ""; btn.classList.remove("armed"); }, 3000);
+  }
+
+  _setMode(v) {
+    const id = this._config.controller.mode;
+    if (!this._st(id)) return this._toast(`${id} not found — add pump_house_controller.yaml`);
+    this._hass.callService("input_select", "select_option", { entity_id: id, option: v })
+      .then(() => this._toast(`Pump house: ${v}`))
+      .catch((e) => this._toast(`Mode change failed — ${e.message || e}`));
+  }
+
+  _nudge(key, dir) {
+    const id = this._config.controller[key];
+    const st = this._st(id);
+    if (!st) return this._toast(`${id} not found — add pump_house_controller.yaml`);
+    const a = st.attributes, step = Number(a.step) || 1;
+    const v = Math.min(Number(a.max), Math.max(Number(a.min), (parseFloat(st.state) || 0) + dir * step));
+    this._hass.callService("input_number", "set_value", { entity_id: id, value: Math.round(v / step) * step });
+  }
+
+  _render() {
+    if (!this.shadowRoot) this.attachShadow({ mode: "open" });
+    const cfg = this._config;
+    const pumpTile = (i) => `
+      <div class="pump" id="p${i}">
+        <div class="ptop"><span class="pname">${this._esc(cfg.pumps[i].name)}</span><span class="role" id="role${i}">—</span></div>
+        <div class="lcd">
+          <div class="big"><span id="hz${i}">—</span><small>Hz</small></div>
+          <div class="bar"><i id="bar${i}"></i></div>
+          <div class="row"><span>PR <b id="pr${i}">—</b></span><span>SP <b id="sp${i}">—</b></span></div>
+          <div class="row"><span><b id="a${i}">—</b> A</span><span id="st${i}">—</span></div>
+        </div>
+      </div>`;
+    const setting = (key, label, unit) => `
+      <div class="set"><span class="sl">${label}</span>
+        <button class="nb" data-k="${key}" data-d="-1">−</button>
+        <span class="sv"><b id="v_${key}">—</b> ${unit}</span>
+        <button class="nb" data-k="${key}" data-d="1">+</button></div>`;
+    this.shadowRoot.innerHTML = `
+      <style>${this._css()}</style>
+      <ha-card>
+        <div class="head">
+          <img class="logo" src="${HAMLET_LOGO}" alt="Hamlet Elektries">
+          <div class="title">${this._esc(cfg.name)}</div>
+        </div>
+        <div class="pumps">${pumpTile(0)}<div class="arrow" id="arrow">⇄</div>${pumpTile(1)}</div>
+        <div class="status" id="status">—</div>
+        <div class="modes">${this._modes().map((m, j) =>
+          `<button class="mode" data-mode="${this._esc(m.v)}" id="m${j}">${this._esc(m.l1)}<br>${this._esc(m.l2)}</button>`).join("")}</div>
+        <div class="assist" id="assist">
+          <div class="ah">SLAVE HELPS WHEN THE MASTER…</div>
+          ${setting("start_hz", "runs above", "Hz")}
+          ${setting("start_delay", "for", "s")}
+          <div class="ah">SLAVE STOPS WHEN THE MASTER…</div>
+          ${setting("stop_hz", "drops below", "Hz")}
+          ${setting("stop_delay", "for", "s")}
+        </div>
+        <div class="pinrow" id="pinrow"><span>PIN</span><input id="pin" type="password" inputmode="numeric" autocomplete="off"><button id="pinok">OK</button></div>
+      </ha-card>`;
+    const r = this.shadowRoot;
+    r.querySelectorAll(".mode").forEach((b) => b.addEventListener("click", () =>
+      this._guard(() => this._confirm(b, () => this._setMode(b.dataset.mode)))));
+    r.querySelectorAll(".nb").forEach((b) => b.addEventListener("click", () =>
+      this._guard(() => this._nudge(b.dataset.k, Number(b.dataset.d)))));
+    r.getElementById("pinok").addEventListener("click", () => this._checkPin());
+    r.getElementById("pin").addEventListener("keydown", (e) => { if (e.key === "Enter") this._checkPin(); });
+    [0, 1].forEach((i) => r.getElementById(`p${i}`).addEventListener("click", () => {
+      const id = cfg.pumps[i].hz;
+      if (id) this.dispatchEvent(new CustomEvent("hass-more-info", { bubbles: true, composed: true, detail: { entityId: id } }));
+    }));
+    this._built = true;
+  }
+
+  _update() {
+    if (!this._built || !this._hass) return;
+    const r = this.shadowRoot, cfg = this._config, c = cfg.controller;
+    const $ = (id) => r.getElementById(id);
+    const set = (id, t) => { const el = $(id); if (el) el.textContent = t; };
+    const mode = this._st(c.mode) ? this._st(c.mode).state : null;
+    const masterIdx = mode === "Pump 1 master" ? 0 : mode === "Pump 2 master" ? 1 : -1;
+    [0, 1].forEach((i) => {
+      const p = cfg.pumps[i];
+      const hz = this._n(p.hz), pr = this._n(p.pressure), sp = this._n(p.setpoint), a = this._n(p.amps);
+      const running = hz !== null && hz > 0.5, fault = this._on(p.fault), sleep = this._on(p.sleep);
+      const hzSt = this._st(p.hz);
+      const offline = !hzSt || ["unavailable", "unknown"].includes(hzSt.state);
+      set(`hz${i}`, hz === null ? "—" : hz.toFixed(1));
+      set(`pr${i}`, pr === null ? "—" : pr.toFixed(2));
+      set(`sp${i}`, sp === null ? "—" : sp.toFixed(2));
+      set(`a${i}`, a === null ? "—" : a.toFixed(1));
+      set(`st${i}`, offline ? "OFFLINE" : fault ? "FAULT" : sleep ? "SLEEP" : running ? "RUN" : "STOP");
+      $(`bar${i}`).style.width = `${hz === null ? 0 : Math.min(100, (hz / (cfg.max_frequency || 50)) * 100)}%`;
+      const role = masterIdx < 0 ? "SOLO" : masterIdx === i ? "MASTER" : "SLAVE";
+      set(`role${i}`, role);
+      $(`role${i}`).className = `role ${role.toLowerCase()}`;
+      $(`p${i}`).className = `pump ${running ? "run" : ""} ${fault ? "fault" : ""} ${offline ? "off" : ""}`;
+    });
+    set("arrow", masterIdx === 0 ? "→" : masterIdx === 1 ? "←" : "⇄");
+    const status = this._st(c.status);
+    set("status", status ? status.state : mode ? mode : "Controller not installed — add pump_house_controller.yaml");
+    this._modes().forEach((m, j) => $(`m${j}`).classList.toggle("on", mode === m.v));
+    $("assist").classList.toggle("dim", masterIdx < 0);
+    ["start_hz", "start_delay", "stop_hz", "stop_delay"].forEach((k) => {
+      const v = this._n(c[k]);
+      set(`v_${k}`, v === null ? "—" : (k.endsWith("hz") ? v.toFixed(1) : v.toFixed(0)));
+    });
+  }
+
+  _css() {
+    return `
+      ha-card { background: linear-gradient(180deg, #3b3f45, #2f3236); color: #e8edf3; border-radius: var(--ha-card-border-radius, 14px);
+        padding: 14px; font-family: var(--paper-font-body1_-_font-family, "Roboto", system-ui, sans-serif); }
+      .head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,.12); }
+      .logo { height: 40px; max-width: 55%; object-fit: contain; object-position: left center; }
+      .title { font-size: 18px; font-weight: 600; text-align: right; }
+      .pumps { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; margin-top: 12px; }
+      .arrow { font-size: 26px; color: #6dd6fa; font-weight: 700; }
+      .pump { background: #1b1c1f; border-radius: 12px; padding: 8px; border-top: 5px solid #2b8fd6; cursor: pointer; min-width: 0; }
+      .pump.run { box-shadow: 0 0 0 2px #3fbf6a inset; }
+      .pump.fault { box-shadow: 0 0 0 2px #e2453f inset; }
+      .pump.off { opacity: .6; }
+      .ptop { display: flex; justify-content: space-between; align-items: center; gap: 6px; margin-bottom: 6px; }
+      .pname { font-weight: 700; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .role { font-size: 10px; font-weight: 800; letter-spacing: 1px; padding: 2px 6px; border-radius: 999px; background: #4b5058; }
+      .role.master { background: #1f9ad3; }
+      .role.slave { background: #b67a0c; }
+      .lcd { background: linear-gradient(180deg, #c3c6f2, #dfe1fb); color: #1b1e46; border-radius: 4px; padding: 6px;
+        font-family: "DejaVu Sans Mono", "Consolas", "Menlo", monospace; font-weight: 700; box-shadow: inset 0 0 0 2px #0e0f12; }
+      .big { font-size: 28px; text-align: right; line-height: 1.1; white-space: nowrap; }
+      .big small { font-size: 13px; margin-left: 4px; }
+      .bar { height: 6px; border: 2px solid #1b1e46; margin: 4px 0; }
+      .bar i { display: block; height: 100%; width: 0; background: #1b1e46; transition: width .6s; }
+      .row { display: flex; justify-content: space-between; font-size: 12px; gap: 4px; white-space: nowrap; }
+      .status { text-align: center; margin: 12px 0 8px; font-size: 14px; font-weight: 600; color: #cfe8ff; }
+      button { font: inherit; cursor: pointer; border: none; color: #fff; -webkit-tap-highlight-color: transparent; }
+      .modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+      .mode { border-radius: 10px; padding: 10px 4px; font-size: 13px; font-weight: 800; line-height: 1.15;
+        background: linear-gradient(180deg, #6b7079, #4b5058 60%, #3d4148); box-shadow: 0 3px 0 rgba(0,0,0,.5); }
+      .mode.on { background: linear-gradient(180deg, #6dd6fa 0%, #33b2e6 55%, #1f9ad3 100%); box-shadow: 0 0 0 3px #e9f8ff, 0 0 14px #6dd6fa; }
+      .mode.armed, .nb.armed { outline: 3px solid #ffb020; outline-offset: 2px; }
+      .assist { margin-top: 12px; background: rgba(0,0,0,.2); border-radius: 10px; padding: 8px 10px; transition: opacity .3s; }
+      .assist.dim { opacity: .45; }
+      .ah { font-size: 10px; letter-spacing: 1.2px; opacity: .65; margin: 4px 0; }
+      .set { display: grid; grid-template-columns: 1fr 36px 84px 36px; align-items: center; gap: 6px; margin: 4px 0; }
+      .sl { font-size: 13px; }
+      .sv { text-align: center; font-family: monospace; font-size: 15px; }
+      .nb { height: 32px; border-radius: 8px; font-size: 18px; font-weight: 700; color: #111;
+        background: linear-gradient(180deg, #fafafa, #d4d4d4); box-shadow: 0 2px 0 rgba(0,0,0,.5); }
+      .pinrow { display: none; align-items: center; gap: 8px; margin-top: 10px; }
+      .pinrow.show { display: flex; }
+      .pinrow input { flex: 1; font-size: 18px; padding: 6px 8px; border-radius: 8px; border: none; }
+      .pinrow button { background: #1f9ad3; padding: 8px 14px; border-radius: 8px; font-weight: 700; }
+    `;
+  }
+}
+
+customElements.define("hamlet-pump-house-card", HamletPumpHouseCard);
+window.customCards = window.customCards || [];
+window.customCards.push({
+  type: "hamlet-pump-house-card",
+  name: "Hamlet Pump House (master / slave)",
+  description: "Two pumps: independent, or Pump 1 / Pump 2 as master with the other assisting",
+  preview: true,
 });
 
 console.info(

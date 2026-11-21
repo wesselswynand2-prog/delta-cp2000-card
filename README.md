@@ -218,6 +218,18 @@ Both drives on one RS-485 line / one Waveshare, every address different:
 
 Use `examples/cp2000_two_pumps_package.yaml` (instead of the single-pump file) and `examples/card_pump2_plc.yaml` for the second card. The second card's `plc:` has `entity_prefix: pump2` and `drive_prefix: vfd2` so its MENU reads Pump 2's settings.
 
+### Pump house master / slave (assist) controller
+
+`examples/pump_house_controller.yaml` (→ `/config/packages/`) + card `custom:hamlet-pump-house-card` (`examples/card_pump_house.yaml`). Needs Home Assistant 2024.10 or newer.
+
+| Mode | What happens |
+|---|---|
+| **Each on its own** | Both pumps run independently — the controller does nothing |
+| **Pump 1 master** | Pump 1 leads. When it runs above *start Hz* for *start delay*, Pump 2 is put in APP AUTO and started; when Pump 1 drops below *stop Hz* for *stop delay*, Pump 2 is stopped. Pump 2 always gets Pump 1's setpoint. |
+| **Pump 2 master** | The same, roles swapped |
+
+Runs in Home Assistant (an automation), so it works with the dashboard closed. No wiring between the drives is needed — everything goes over RS-485.
+
 ## Settings menu (MENU key)
 
 **MENU** opens a settings menu on the LCD, like the drive's own keypad:

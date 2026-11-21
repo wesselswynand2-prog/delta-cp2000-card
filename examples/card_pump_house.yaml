@@ -1,0 +1,8 @@
+# Pump house master / slave controller card (needs pump_house_controller.yaml)
+type: custom:hamlet-pump-house-card
+name: Pump House
+pin: "1234"          # asked before changing mode or settings (empty = no PIN)
+max_frequency: 50
+pumps:
+  - name: Pump 1     # entities default to sensor.vfd_* / sensor.pump_*
+  - name: Pump 2     # entities default to sensor.vfd2_* / sensor.pump2_*

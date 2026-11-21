@@ -1,0 +1,134 @@
+# ---------------------------------------------------------------------------
+# Pump house master / slave (assist) controller — Hamlet Elektries
+#
+# Two CP2000 pumps running the "Single Pump V9" program on one RS-485 line
+# (use together with cp2000_two_pumps_package.yaml).
+#
+#   Independent    each pump runs on its own — the controller does nothing
+#   Pump 1 master  Pump 1 leads. When Pump 1 runs above START Hz for START delay,
+#                  Pump 2 is started to help. When Pump 1 drops below STOP Hz for
+#                  STOP delay, Pump 2 is stopped again.
+#   Pump 2 master  the same with the roles swapped.
+#
+# In a master mode the slave is put in APP AUTO (pressure control) and gets the
+# master's setpoint, so both regulate the same pressure.
+#
+# Put this file in /config/packages/pump_house_controller.yaml and restart.
+# Addresses: Pump 1 PLC = 2, Pump 2 PLC = 4 (change the numbers below if yours differ).
+# ---------------------------------------------------------------------------
+
+input_select:
+  pump_house_mode:
+    name: Pump house mode
+    options:
+      - Independent
+      - Pump 1 master
+      - Pump 2 master
+    icon: mdi:swap-horizontal
+
+input_number:
+  pump_house_start_hz:
+    name: Assist start Hz
+    min: 10
+    max: 60
+    step: 0.5
+    unit_of_measurement: Hz
+    mode: box
+  pump_house_start_delay:
+    name: Assist start delay
+    min: 0
+    max: 600
+    step: 5
+    unit_of_measurement: s
+    mode: box
+  pump_house_stop_hz:
+    name: Assist stop Hz
+    min: 0
+    max: 60
+    step: 0.5
+    unit_of_measurement: Hz
+    mode: box
+  pump_house_stop_delay:
+    name: Assist stop delay
+    min: 0
+    max: 600
+    step: 5
+    unit_of_measurement: s
+    mode: box
+
+template:
+  - sensor:
+      - name: Pump house status
+        unique_id: pump_house_status
+        icon: mdi:pump
+        state: >
+          {% set m = states('input_select.pump_house_mode') %}
+          {% set p1 = states('sensor.vfd_output_frequency') | float(0) > 0.5 %}
+          {% set p2 = states('sensor.vfd2_output_frequency') | float(0) > 0.5 %}
+          {% if m == 'Independent' %}Independent
+          {% elif m == 'Pump 1 master' %}{{ 'Pump 1 leads, Pump 2 helping' if p2 else 'Pump 1 leads, Pump 2 standby' }}
+          {% else %}{{ 'Pump 2 leads, Pump 1 helping' if p1 else 'Pump 2 leads, Pump 1 standby' }}{% endif %}
+
+automation:
+  - id: pump_house_assist_controller
+    alias: Pump house - master/slave assist
+    description: Starts/stops the slave pump from the master's speed and keeps the slave on the master's setpoint.
+    mode: queued
+    max: 10
+    triggers:
+      - trigger: template
+        id: start
+        value_template: >
+          {% set m = states('input_select.pump_house_mode') %}
+          {% set hz = states('sensor.vfd_output_frequency' if m == 'Pump 1 master' else 'sensor.vfd2_output_frequency') | float(0) %}
+          {{ m != 'Independent' and hz >= states('input_number.pump_house_start_hz') | float(99) }}
+        for:
+          seconds: "{{ states('input_number.pump_house_start_delay') | int(30) }}"
+      - trigger: template
+        id: stop
+        value_template: >
+          {% set m = states('input_select.pump_house_mode') %}
+          {% set hz = states('sensor.vfd_output_frequency' if m == 'Pump 1 master' else 'sensor.vfd2_output_frequency') | float(0) %}
+          {{ m != 'Independent' and hz <= states('input_number.pump_house_stop_hz') | float(0) }}
+        for:
+          seconds: "{{ states('input_number.pump_house_stop_delay') | int(60) }}"
+      - trigger: state
+        id: sync
+        entity_id: input_select.pump_house_mode
+      - trigger: state
+        id: sync
+        entity_id:
+          - sensor.pump_setpoint
+          - sensor.pump2_setpoint
+    variables:
+      m: "{{ states('input_select.pump_house_mode') }}"
+      slave_plc: "{{ 4 if m == 'Pump 1 master' else 2 }}"
+      slave_mode: "{{ states('sensor.pump2_app_control_mode' if m == 'Pump 1 master' else 'sensor.pump_app_control_mode') | int(-1) }}"
+      slave_fault: "{{ is_state('binary_sensor.pump2_fault' if m == 'Pump 1 master' else 'binary_sensor.pump_fault', 'on') }}"
+      master_sp: "{{ states('sensor.pump_setpoint' if m == 'Pump 1 master' else 'sensor.pump2_setpoint') | float(-1) }}"
+      slave_sp: "{{ states('sensor.pump2_setpoint' if m == 'Pump 1 master' else 'sensor.pump_setpoint') | float(-1) }}"
+    conditions:
+      - condition: template
+        value_template: "{{ m != 'Independent' }}"
+    actions:
+      - choose:
+          # ---- master busy: start the slave ----
+          - conditions: "{{ trigger.id == 'start' and not slave_fault }}"
+            sequence:
+              - if: "{{ slave_mode != 1 }}"
+                then:
+                  - action: modbus.write_register     # slave -> APP AUTO (D394 = 1)
+                    data: { hub: vfd, slave: "{{ slave_plc }}", address: 4490, value: 1 }
+                  - delay: { seconds: 2 }
+              - action: modbus.write_register         # slave RUN (D395 = 1)
+                data: { hub: vfd, slave: "{{ slave_plc }}", address: 4491, value: 1 }
+          # ---- master quiet: stop the slave ----
+          - conditions: "{{ trigger.id == 'stop' }}"
+            sequence:
+              - action: modbus.write_register         # slave STOP (D395 = 0)
+                data: { hub: vfd, slave: "{{ slave_plc }}", address: 4491, value: 0 }
+          # ---- mode changed / setpoint changed: slave gets the master's setpoint ----
+          - conditions: "{{ trigger.id == 'sync' and master_sp >= 0 and (master_sp - slave_sp) | abs > 0.005 }}"
+            sequence:
+              - action: modbus.write_register         # slave setpoint (D304)
+                data: { hub: vfd, slave: "{{ slave_plc }}", address: 4400, value: "{{ (master_sp * 100) | round(0) | int }}" }
