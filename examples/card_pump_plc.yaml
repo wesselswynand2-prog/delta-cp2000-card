@@ -19,7 +19,7 @@ entities:
   dc_bus_voltage: sensor.vfd_dc_bus_voltage
   igbt_temperature: sensor.vfd_igbt_temperature
   pid_feedback: sensor.pump_pressure            # D62  PRESENT VALUE
-  pressure_setpoint: sensor.pump_setpoint       # D304 SETPOINT
+  pressure_setpoint: sensor.pump_setpoint       # D296 SETPOINT (written via D304)
   output_power: sensor.pump_power               # D362
   energy: sensor.pump_energy                    # D366
   run_days: sensor.pump_runtime_days            # D398
@@ -38,7 +38,7 @@ plc:
   setpoint_scale: 100       # 0.00 bar
   app_mode_register: 4490   # D394
 boxes:
-  box1: { entity: sensor.pump_d318, label: D318 }
+  box1: { entity: sensor.pump_d318, label: D318, decimals: 1 }
   box2: { entity: sensor.pump_power, label: POWER }
 keys:
   f1: { label: MAIN, function: page_main }

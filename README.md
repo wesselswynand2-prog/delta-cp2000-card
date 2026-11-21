@@ -197,7 +197,7 @@ For CP2000 drives running the Hamlet *Single Pump V9.0.1* PLC program (built-in 
 | Card | PLC register |
 |---|---|
 | PRESENT VALUE | D62 (0.00 bar) |
-| SETPOINT (read + written by ▲ ▼ ENTER) | D304 (0.00 bar) |
+| SETPOINT | shown from D296, written to D304 (0.00 bar) |
 | SLEEP / BOOSTING / NO LOAD / FAULT (pump screen + status pill + ERR light) | M303 / M55 / M321 / M352 |
 | APP CONTROL key (cycles PANEL → APP AUTO → APP MAN, tap twice) | D394 |
 | INFO page: kW, kWh, runtime | D362, D366, D398/D397 |

@@ -123,7 +123,8 @@ modbus:
       - name: Pump Setpoint
         unique_id: pump_plc_setpoint
         slave: 2
-        address: 4400               # D304 SETPOINT (0.00 bar) — the card writes here
+        address: 4392               # D296 SETPOINT as shown on the keypad (0.00 bar)
+                                    # (the card WRITES new setpoints to D304 = 4400; the program copies it to D296)
         input_type: holding
         data_type: int16
         scale: 0.01
