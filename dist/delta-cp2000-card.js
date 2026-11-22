@@ -13,7 +13,7 @@
  *   2101H (8449)  read   drive status word
  */
 
-const CARD_VERSION = "1.13.0";
+const CARD_VERSION = "1.13.1";
 
 // Hamlet Elektries logo (white, transparent background) — built in so no upload is needed.
 const HAMLET_LOGO =
@@ -1657,6 +1657,9 @@ class DeltaCP2000Card extends HTMLElement {
         padding: 14px; overflow: hidden;
         font-family: var(--paper-font-body1_-_font-family, "Roboto", system-ui, sans-serif);
       }
+      /* keep the dark keypad housing when a theme (card-mod / glass themes) makes cards transparent */
+      :host ha-card { background: linear-gradient(180deg, var(--vfd-housing), var(--vfd-housing2)) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; color: #e8edf3 !important; }
+      :host ha-card::before, :host ha-card::after { content: none !important; display: none !important; }
       .head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,.12); }
       .logo { height: 44px; max-width: 65%; object-fit: contain; object-position: left center; }
       .brand { font-size: 16px; font-weight: 800; letter-spacing: 2px; }
@@ -2107,6 +2110,8 @@ class HamletPumpHouseCard extends HTMLElement {
     return `
       ha-card { background: linear-gradient(180deg, #3b3f45, #2f3236); color: #e8edf3; border-radius: var(--ha-card-border-radius, 14px);
         padding: 14px; font-family: var(--paper-font-body1_-_font-family, "Roboto", system-ui, sans-serif); }
+      :host ha-card { background: linear-gradient(180deg, #3b3f45, #2f3236) !important; backdrop-filter: none !important; -webkit-backdrop-filter: none !important; color: #e8edf3 !important; }
+      :host ha-card::before, :host ha-card::after { content: none !important; display: none !important; }
       .head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,.12); }
       .logo { height: 40px; max-width: 55%; object-fit: contain; object-position: left center; }
       .title { font-size: 18px; font-weight: 600; text-align: right; }

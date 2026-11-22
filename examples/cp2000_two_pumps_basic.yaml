@@ -1,0 +1,243 @@
+# ---------------------------------------------------------------------------
+# TEST FILE — two pumps, only the important values (no MENU settings), 5 s timeout.
+# Waveshare 192.168.23.10:510 (Modbus TCP to RTU). Pump 1 = drive 1 / PLC 2, Pump 2 = drive 3 / PLC 4.
+# Use this instead of cp2000_pump.yaml to test whether the RS-485 line copes; the card's MENU
+# will show n/a for settings while this file is in use.
+# ---------------------------------------------------------------------------
+modbus:
+- name: vfd
+  type: tcp
+  host: 192.168.23.10
+  port: 510
+  timeout: 5
+  delay: 1
+  sensors:
+  - name: VFD Fault Code
+    unique_id: vfd_fault_code
+    slave: 1
+    address: 8448
+    input_type: holding
+    data_type: uint16
+    scan_interval: 10
+  - name: VFD Status Word
+    unique_id: vfd_status_word
+    slave: 1
+    address: 8449
+    input_type: holding
+    data_type: uint16
+    scan_interval: 5
+  - name: VFD Output Frequency
+    unique_id: vfd_output_frequency
+    slave: 1
+    address: 8451
+    input_type: holding
+    data_type: uint16
+    scale: 0.01
+    precision: 2
+    unit_of_measurement: Hz
+    device_class: frequency
+    state_class: measurement
+    scan_interval: 5
+  - name: VFD Output Current
+    unique_id: vfd_output_current
+    slave: 1
+    address: 8452
+    input_type: holding
+    data_type: uint16
+    scale: 0.01
+    precision: 1
+    unit_of_measurement: A
+    device_class: current
+    state_class: measurement
+    scan_interval: 10
+  - name: Pump Pressure
+    unique_id: pump_plc_pressure
+    slave: 2
+    address: 4158
+    input_type: holding
+    data_type: int16
+    scale: 0.01
+    precision: 2
+    unit_of_measurement: bar
+    device_class: pressure
+    state_class: measurement
+    scan_interval: 5
+  - name: Pump Setpoint
+    unique_id: pump_plc_setpoint
+    slave: 2
+    address: 4392
+    input_type: holding
+    data_type: int16
+    scale: 0.01
+    precision: 2
+    unit_of_measurement: bar
+    device_class: pressure
+    scan_interval: 10
+  - name: Pump D318
+    unique_id: pump_plc_d318
+    slave: 2
+    address: 4414
+    input_type: holding
+    data_type: int16
+    scale: 0.1
+    precision: 1
+    scan_interval: 10
+  - name: Pump App Control Mode
+    unique_id: pump_plc_app_mode
+    slave: 2
+    address: 4490
+    input_type: holding
+    data_type: uint16
+    scan_interval: 10
+  - name: Pump Power
+    unique_id: pump_plc_kw
+    slave: 2
+    address: 4458
+    input_type: holding
+    data_type: uint16
+    scale: 0.1
+    precision: 1
+    unit_of_measurement: kW
+    device_class: power
+    state_class: measurement
+    scan_interval: 10
+  - name: VFD2 Fault Code
+    unique_id: vfd2_fault_code
+    slave: 3
+    address: 8448
+    input_type: holding
+    data_type: uint16
+    scan_interval: 10
+  - name: VFD2 Status Word
+    unique_id: vfd2_status_word
+    slave: 3
+    address: 8449
+    input_type: holding
+    data_type: uint16
+    scan_interval: 5
+  - name: VFD2 Output Frequency
+    unique_id: vfd2_output_frequency
+    slave: 3
+    address: 8451
+    input_type: holding
+    data_type: uint16
+    scale: 0.01
+    precision: 2
+    unit_of_measurement: Hz
+    device_class: frequency
+    state_class: measurement
+    scan_interval: 5
+  - name: VFD2 Output Current
+    unique_id: vfd2_output_current
+    slave: 3
+    address: 8452
+    input_type: holding
+    data_type: uint16
+    scale: 0.01
+    precision: 1
+    unit_of_measurement: A
+    device_class: current
+    state_class: measurement
+    scan_interval: 10
+  - name: Pump2 Pressure
+    unique_id: pump2_plc_pressure
+    slave: 4
+    address: 4158
+    input_type: holding
+    data_type: int16
+    scale: 0.01
+    precision: 2
+    unit_of_measurement: bar
+    device_class: pressure
+    state_class: measurement
+    scan_interval: 5
+  - name: Pump2 Setpoint
+    unique_id: pump2_plc_setpoint
+    slave: 4
+    address: 4392
+    input_type: holding
+    data_type: int16
+    scale: 0.01
+    precision: 2
+    unit_of_measurement: bar
+    device_class: pressure
+    scan_interval: 10
+  - name: Pump2 D318
+    unique_id: pump2_plc_d318
+    slave: 4
+    address: 4414
+    input_type: holding
+    data_type: int16
+    scale: 0.1
+    precision: 1
+    scan_interval: 10
+  - name: Pump2 App Control Mode
+    unique_id: pump2_plc_app_mode
+    slave: 4
+    address: 4490
+    input_type: holding
+    data_type: uint16
+    scan_interval: 10
+  - name: Pump2 Power
+    unique_id: pump2_plc_kw
+    slave: 4
+    address: 4458
+    input_type: holding
+    data_type: uint16
+    scale: 0.1
+    precision: 1
+    unit_of_measurement: kW
+    device_class: power
+    state_class: measurement
+    scan_interval: 10
+  binary_sensors:
+  - name: Pump Sleep
+    unique_id: pump_plc_sleep
+    slave: 2
+    address: 2351
+    input_type: coil
+    scan_interval: 10
+  - name: Pump Boosting
+    unique_id: pump_plc_boost
+    slave: 2
+    address: 2098
+    input_type: coil
+    scan_interval: 10
+  - name: Pump No Load
+    unique_id: pump_plc_no_load
+    slave: 2
+    address: 2369
+    input_type: coil
+    scan_interval: 10
+  - name: Pump Fault
+    unique_id: pump_plc_fault
+    slave: 2
+    address: 2400
+    input_type: coil
+    device_class: problem
+    scan_interval: 10
+  - name: Pump2 Sleep
+    unique_id: pump2_plc_sleep
+    slave: 4
+    address: 2351
+    input_type: coil
+    scan_interval: 10
+  - name: Pump2 Boosting
+    unique_id: pump2_plc_boost
+    slave: 4
+    address: 2098
+    input_type: coil
+    scan_interval: 10
+  - name: Pump2 No Load
+    unique_id: pump2_plc_no_load
+    slave: 4
+    address: 2369
+    input_type: coil
+    scan_interval: 10
+  - name: Pump2 Fault
+    unique_id: pump2_plc_fault
+    slave: 4
+    address: 2400
+    input_type: coil
+    device_class: problem
+    scan_interval: 10
