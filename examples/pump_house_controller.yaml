@@ -58,6 +58,24 @@ input_number:
     mode: box
 
 template:
+  # "Delay running" sensors: on while the master is above START Hz / below STOP Hz.
+  # The controller starts / stops the slave when one has been on for its delay;
+  # the Pump House card shows the countdown from them.
+  - binary_sensor:
+      - name: pump house assist start          # binary_sensor.pump_house_assist_start
+        unique_id: pump_house_assist_start
+        icon: mdi:timer-play-outline
+        state: >
+          {% set m = states('input_select.pump_house_mode') %}
+          {% set hz = states('sensor.vfd_output_frequency' if m == 'Pump 1 master' else 'sensor.vfd2_output_frequency') | float(0) %}
+          {{ m != 'Independent' and hz >= states('input_number.pump_house_start_hz') | float(99) }}
+      - name: pump house assist stop           # binary_sensor.pump_house_assist_stop
+        unique_id: pump_house_assist_stop
+        icon: mdi:timer-stop-outline
+        state: >
+          {% set m = states('input_select.pump_house_mode') %}
+          {% set hz = states('sensor.vfd_output_frequency' if m == 'Pump 1 master' else 'sensor.vfd2_output_frequency') | float(0) %}
+          {{ m != 'Independent' and hz <= states('input_number.pump_house_stop_hz') | float(0) }}
   - sensor:
       - name: Pump house status
         unique_id: pump_house_status
@@ -77,20 +95,16 @@ automation:
     mode: queued
     max: 10
     triggers:
-      - trigger: template
+      - trigger: state
         id: start
-        value_template: >
-          {% set m = states('input_select.pump_house_mode') %}
-          {% set hz = states('sensor.vfd_output_frequency' if m == 'Pump 1 master' else 'sensor.vfd2_output_frequency') | float(0) %}
-          {{ m != 'Independent' and hz >= states('input_number.pump_house_start_hz') | float(99) }}
+        entity_id: binary_sensor.pump_house_assist_start
+        to: "on"
         for:
           seconds: "{{ states('input_number.pump_house_start_delay') | int(30) }}"
-      - trigger: template
+      - trigger: state
         id: stop
-        value_template: >
-          {% set m = states('input_select.pump_house_mode') %}
-          {% set hz = states('sensor.vfd_output_frequency' if m == 'Pump 1 master' else 'sensor.vfd2_output_frequency') | float(0) %}
-          {{ m != 'Independent' and hz <= states('input_number.pump_house_stop_hz') | float(0) }}
+        entity_id: binary_sensor.pump_house_assist_stop
+        to: "on"
         for:
           seconds: "{{ states('input_number.pump_house_stop_delay') | int(60) }}"
       - trigger: state

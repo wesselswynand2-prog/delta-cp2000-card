@@ -13,7 +13,7 @@
  *   2101H (8449)  read   drive status word
  */
 
-const CARD_VERSION = "1.14.2";
+const CARD_VERSION = "1.15.0";
 
 // Hamlet Elektries logo (white, transparent background) — built in so no upload is needed.
 const HAMLET_LOGO =
@@ -2153,6 +2153,8 @@ const PH_DEFAULTS = {
     stop_hz: "input_number.pump_house_stop_hz",
     stop_delay: "input_number.pump_house_stop_delay",
     status: "sensor.pump_house_status",
+    start_timer: "binary_sensor.pump_house_assist_start",
+    stop_timer: "binary_sensor.pump_house_assist_stop",
   },
   max_frequency: 50,
 };
@@ -2183,6 +2185,7 @@ class HamletPumpHouseCard extends HTMLElement {
 
   getCardSize() { return 6; }
   getGridOptions() { return { columns: 12, min_columns: 6, rows: "auto" }; }
+  disconnectedCallback() { if (this._tick) { clearInterval(this._tick); this._tick = null; } }
 
   _st(id) { return id && this._hass ? this._hass.states[id] : undefined; }
   _n(id) { const s = this._st(id); const v = s ? parseFloat(s.state) : NaN; return Number.isFinite(v) ? v : null; }
@@ -2280,6 +2283,7 @@ class HamletPumpHouseCard extends HTMLElement {
         </div>
         <div class="pumps">${pumpTile(0)}<div class="arrow" id="arrow">⇄</div>${pumpTile(1)}</div>
         <div class="status" id="status">—</div>
+        <div class="timing" id="timing" hidden><div class="tline" id="tline">—</div><div class="tbar"><i id="tbar"></i></div></div>
         <div class="modes">${this._modes().map((m, j) =>
           `<button class="mode" data-mode="${this._esc(m.v)}" id="m${j}">${this._esc(m.l1)}<br>${this._esc(m.l2)}</button>`).join("")}</div>
         <div class="assist" id="assist">
@@ -2335,6 +2339,31 @@ class HamletPumpHouseCard extends HTMLElement {
     set("status", status ? status.state : mode ? mode : "Controller not installed — add pump_house_controller.yaml");
     this._modes().forEach((m, j) => $(`m${j}`).classList.toggle("on", mode === m.v));
     $("assist").classList.toggle("dim", masterIdx < 0);
+    // ---- countdown while the slave's start / stop delay is running ----
+    let timing = null;
+    if (masterIdx >= 0) {
+      const si = 1 - masterIdx, sHz = this._n(cfg.pumps[si].hz), slaveRun = sHz !== null && sHz > 0.5;
+      const pick = (sensor, delayKey, verb) => {
+        const st = this._st(sensor);
+        if (!st || st.state !== "on") return null;
+        const total = this._n(c[delayKey]) || 0;
+        const left = Math.max(0, total - (Date.now() - new Date(st.last_changed).getTime()) / 1000);
+        return { verb, left, total, name: cfg.pumps[si].name };
+      };
+      timing = !slaveRun ? pick(c.start_timer, "start_delay", "starts") : pick(c.stop_timer, "stop_delay", "stops");
+    }
+    const tEl = $("timing");
+    tEl.hidden = !timing;
+    if (timing) {
+      const l = Math.ceil(timing.left);
+      const txt = l <= 0 ? `${timing.name} ${timing.verb === "starts" ? "starting" : "stopping"}…`
+        : `${timing.name} ${timing.verb} in ${l >= 60 ? `${Math.floor(l / 60)}:${String(l % 60).padStart(2, "0")}` : `${l} s`}`;
+      set("tline", `⏱ ${txt}`);
+      tEl.classList.toggle("stop", timing.verb === "stops");
+      $("tbar").style.width = `${timing.total > 0 ? Math.min(100, ((timing.total - timing.left) / timing.total) * 100) : 100}%`;
+    }
+    if (timing && !this._tick) this._tick = setInterval(() => this._update(), 1000);
+    if (!timing && this._tick) { clearInterval(this._tick); this._tick = null; }
     ["start_hz", "start_delay", "stop_hz", "stop_delay"].forEach((k) => {
       const v = this._n(c[k]);
       set(`v_${k}`, v === null ? "—" : (k.endsWith("hz") ? v.toFixed(1) : v.toFixed(0)));
@@ -2369,6 +2398,14 @@ class HamletPumpHouseCard extends HTMLElement {
       .bar i { display: block; height: 100%; width: 0; background: #1b1e46; transition: width .6s; }
       .row { display: flex; justify-content: space-between; font-size: 12px; gap: 4px; white-space: nowrap; }
       .status { text-align: center; margin: 12px 0 8px; font-size: 14px; font-weight: 600; color: #cfe8ff; }
+      .timing { margin: -2px 0 10px; padding: 8px 10px; border-radius: 10px; background: rgba(255,176,32,.12); border: 1px solid rgba(255,176,32,.5); }
+      .timing[hidden] { display: none; }
+      .timing .tline { text-align: center; font-weight: 800; font-size: 15px; color: #ffb020; font-variant-numeric: tabular-nums; }
+      .timing .tbar { height: 5px; margin-top: 6px; border-radius: 3px; background: rgba(255,255,255,.12); overflow: hidden; }
+      .timing .tbar i { display: block; height: 100%; width: 0; background: #ffb020; transition: width 1s linear; }
+      .timing.stop { background: rgba(109,214,250,.10); border-color: rgba(109,214,250,.5); }
+      .timing.stop .tline { color: #6dd6fa; }
+      .timing.stop .tbar i { background: #6dd6fa; }
       button { font: inherit; cursor: pointer; border: none; color: #fff; -webkit-tap-highlight-color: transparent; }
       .modes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
       .mode { border-radius: 10px; padding: 10px 4px; font-size: 13px; font-weight: 800; line-height: 1.15;

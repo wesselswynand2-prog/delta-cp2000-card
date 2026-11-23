@@ -230,6 +230,8 @@ Use `examples/cp2000_two_pumps_package.yaml` (instead of the single-pump file) a
 
 Runs in Home Assistant (an automation), so it works with the dashboard closed. No wiring between the drives is needed — everything goes over RS-485.
 
+While the slave's start or stop delay is running, the Pump House card shows a countdown (e.g. *⏱ Pump 1 starts in 1:22*) with a progress bar. It reads `binary_sensor.pump_house_assist_start` / `binary_sensor.pump_house_assist_stop` from the controller file (v1.15.0 or newer of `pump_house_controller.yaml`).
+
 ## Pump timer (TIMER key)
 
 Lets the client set **start / stop times per weekday** on the card: up to 3 run periods per day, and a period may run past midnight (e.g. 22:00 – 02:00).
