@@ -13,7 +13,7 @@
  *   2101H (8449)  read   drive status word
  */
 
-const CARD_VERSION = "1.14.1";
+const CARD_VERSION = "1.14.2";
 
 // Hamlet Elektries logo (white, transparent background) — built in so no upload is needed.
 const HAMLET_LOGO =
@@ -1233,10 +1233,12 @@ class DeltaCP2000Card extends HTMLElement {
     return !this._config.pin || (this._pinUntil && Date.now() < this._pinUntil);
   }
 
-  _timerGuard(fn) {
+  _timerGuard(fn, what = "save") {
     if (this._timerUnlocked()) return fn();
     this._tm.pin = fn;
+    this._tm.pinFor = what;
     this._timerRender();
+    this._toast(`Enter the card PIN to ${what}`);
   }
 
   _timerRender() {
@@ -1266,18 +1268,20 @@ class DeltaCP2000Card extends HTMLElement {
         <button class="tbtn" id="t_copywk">Copy to Mon–Fri</button>
         <button class="tbtn" id="t_copyall">Copy to all days</button>
       </div>
-      ${tm.pin ? `<div class="tpin"><input type="password" id="t_pin" class="ttime" inputmode="numeric" placeholder="PIN" autocomplete="off"><button class="tbtn" id="t_pinok">OK</button></div>` : ""}
-      <div class="tact"><button class="tbtn save ${tm.dirty ? "dirty" : ""}" id="t_save">${tm.dirty ? "SAVE CHANGES" : "SAVED"}</button></div>`;
+      ${tm.pin
+        ? `<div class="tpinlbl">Enter the card PIN to ${this._esc_(tm.pinFor || "save")}</div>
+           <div class="tpin"><input type="password" id="t_pin" class="ttime" inputmode="numeric" placeholder="PIN" autocomplete="off"><button class="tbtn save dirty" id="t_pinok">OK</button><button class="tbtn" id="t_pincancel">Cancel</button></div>`
+        : `<div class="tact"><button class="tbtn save ${tm.dirty ? "dirty" : ""}" id="t_save">${tm.dirty ? "SAVE CHANGES" : "SAVE"}</button></div>`}`;
     const $ = (id) => el.querySelector(`#${id}`);
     $("t_close").onclick = () => {
       if (tm.dirty && !tm.closeWarned) { tm.closeWarned = true; this._toast("Changes not saved — press ✕ again to close without saving"); return; }
       this._tm = null; this._timerRender();
     };
     el.querySelectorAll("[data-day]").forEach((b) => (b.onclick = () => { tm.day = Number(b.dataset.day); this._timerRender(); }));
-    el.querySelectorAll("input[data-r]").forEach((inp) => (inp.onchange = () => {
+    el.querySelectorAll("input[data-r]").forEach((inp) => (inp.oninput = inp.onchange = () => {
       tm.data[tm.day][Number(inp.dataset.r)][Number(inp.dataset.c)] = inp.value || "";
       tm.dirty = true; tm.closeWarned = false;
-      const sv = $("t_save"); sv.classList.add("dirty"); sv.textContent = "SAVE CHANGES";
+      const sv = $("t_save"); if (sv) { sv.classList.add("dirty"); sv.textContent = "SAVE CHANGES"; }
       el.querySelectorAll("[data-day]")[tm.day].classList.toggle("has", has(tm.day));
     }));
     el.querySelectorAll("[data-clr]").forEach((b) => (b.onclick = () => {
@@ -1291,8 +1295,8 @@ class DeltaCP2000Card extends HTMLElement {
       return this._hass.callService("input_boolean", "toggle", { entity_id: id })
         .then(() => this._toast(`${this._config.name}: timer ${this._timerEnabled() ? "OFF" : "ON"}`))
         .catch((e) => this._toast(`Timer: ${e.message || e}`));
-    });
-    $("t_save").onclick = () => {
+    }, "switch the timer on / off");
+    if ($("t_save")) $("t_save").onclick = () => {
       for (const [d, day] of tm.data.entries()) {
         for (const [a, b] of day) {
           if ((a && !b) || (!a && b)) { tm.day = d; this._timerRender(); this._toast(`${D[d]}: fill in both START and STOP (or clear the row)`); return; }
@@ -1319,6 +1323,7 @@ class DeltaCP2000Card extends HTMLElement {
         } else { this._toast("Wrong PIN"); pin.value = ""; pin.focus(); }
       };
       $("t_pinok").onclick = ok;
+      $("t_pincancel").onclick = () => { tm.pin = null; this._timerRender(); };
       pin.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); ok(); } });
       setTimeout(() => pin.focus(), 50);
     }
@@ -1900,7 +1905,9 @@ class DeltaCP2000Card extends HTMLElement {
       .tpanel .thint { margin-top: 6px; font-size: 10px; color: #8a94a3; }
       .tpanel .tact { display: flex; gap: 6px; margin-top: 10px; }
       .tpanel .tact .tbtn { flex: 1; }
-      .tpanel .tpin { display: flex; gap: 6px; margin-top: 10px; }
+      .tpanel .tpin { display: flex; gap: 6px; margin-top: 6px; }
+      .tpanel .tpin .ttime { flex: 1; }
+      .tpanel .tpinlbl { margin-top: 10px; font-size: 12px; font-weight: 700; color: #ffb020; }
       .tpanel .save { background: #2a2d32; color: #8a94a3; }
       .tpanel .save.dirty { background: var(--vfd-accent); color: #fff; }
 
