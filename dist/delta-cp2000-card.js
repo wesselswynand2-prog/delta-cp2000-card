@@ -13,7 +13,7 @@
  *   2101H (8449)  read   drive status word
  */
 
-const CARD_VERSION = "1.15.0";
+const CARD_VERSION = "1.16.0";
 
 // Hamlet Elektries logo (white, transparent background) — built in so no upload is needed.
 const HAMLET_LOGO =
@@ -2153,6 +2153,8 @@ const PH_DEFAULTS = {
     stop_hz: "input_number.pump_house_stop_hz",
     stop_delay: "input_number.pump_house_stop_delay",
     status: "sensor.pump_house_status",
+    method: "input_select.pump_house_assist_method",
+    min_hz: "input_number.pump_house_min_hz",
     start_timer: "binary_sensor.pump_house_assist_start",
     stop_timer: "binary_sensor.pump_house_assist_stop",
   },
@@ -2247,6 +2249,13 @@ class HamletPumpHouseCard extends HTMLElement {
       .catch((e) => this._toast(`Mode change failed — ${e.message || e}`));
   }
 
+  _setSelect(id, v, what) {
+    if (!this._st(id)) return this._toast(`${id} not found — update pump_house_controller.yaml`);
+    this._hass.callService("input_select", "select_option", { entity_id: id, option: v })
+      .then(() => this._toast(`${what}: ${v}`))
+      .catch((e) => this._toast(`Change failed — ${e.message || e}`));
+  }
+
   _nudge(key, dir) {
     const id = this._config.controller[key];
     const st = this._st(id);
@@ -2287,18 +2296,32 @@ class HamletPumpHouseCard extends HTMLElement {
         <div class="modes">${this._modes().map((m, j) =>
           `<button class="mode" data-mode="${this._esc(m.v)}" id="m${j}">${this._esc(m.l1)}<br>${this._esc(m.l2)}</button>`).join("")}</div>
         <div class="assist" id="assist">
+          <div class="ah">THE SLAVE RUNS ON…</div>
+          <div class="meth">
+            <button class="mb" data-method="Own pressure" id="mt0">OWN PRESSURE</button>
+            <button class="mb" data-method="Follow master" id="mt1">FOLLOW MASTER</button>
+          </div>
+          <div class="mhint" id="mhint">—</div>
           <div class="ah">SLAVE HELPS WHEN THE MASTER…</div>
           ${setting("start_hz", "runs above", "Hz")}
           ${setting("start_delay", "for", "s")}
           <div class="ah">SLAVE STOPS WHEN THE MASTER…</div>
           ${setting("stop_hz", "drops below", "Hz")}
           ${setting("stop_delay", "for", "s")}
+          <div class="warn" id="warn" hidden></div>
+        </div>
+        <div class="assist minbox" id="minbox">
+          <div class="ah">BOTH PUMPS</div>
+          ${setting("min_hz", "min speed", "Hz")}
+          <div class="mhint">Written to both pumps' program min speed (D272). 0 = leave as is.</div>
         </div>
         <div class="pinrow" id="pinrow"><span>PIN</span><input id="pin" type="password" inputmode="numeric" autocomplete="off"><button id="pinok">OK</button></div>
       </ha-card>`;
     const r = this.shadowRoot;
     r.querySelectorAll(".mode").forEach((b) => b.addEventListener("click", () =>
       this._guard(() => this._confirm(b, () => this._setMode(b.dataset.mode)))));
+    r.querySelectorAll(".mb").forEach((b) => b.addEventListener("click", () =>
+      this._guard(() => this._setSelect(cfg.controller.method, b.dataset.method, "Slave runs on"))));
     r.querySelectorAll(".nb").forEach((b) => b.addEventListener("click", () =>
       this._guard(() => this._nudge(b.dataset.k, Number(b.dataset.d)))));
     r.getElementById("pinok").addEventListener("click", () => this._checkPin());
@@ -2364,7 +2387,17 @@ class HamletPumpHouseCard extends HTMLElement {
     }
     if (timing && !this._tick) this._tick = setInterval(() => this._update(), 1000);
     if (!timing && this._tick) { clearInterval(this._tick); this._tick = null; }
-    ["start_hz", "start_delay", "stop_hz", "stop_delay"].forEach((k) => {
+    const meth = this._st(c.method) ? this._st(c.method).state : null;
+    $("mt0").classList.toggle("on", meth === "Own pressure");
+    $("mt1").classList.toggle("on", meth === "Follow master");
+    set("mhint", !meth ? "Update pump_house_controller.yaml for this option"
+      : meth === "Follow master" ? "Slave runs at the master's speed (APP MAN), never below min speed. Master holds the setpoint."
+      : "Slave uses its own pressure control on the master's setpoint (may sleep near the setpoint).");
+    const minHz = this._n(c.min_hz), stopHz = this._n(c.stop_hz);
+    const warn = minHz && stopHz !== null && stopHz <= minHz
+      ? `"Drops below" (${stopHz.toFixed(1)} Hz) must be above min speed (${minHz.toFixed(1)} Hz) — otherwise the slave never stops.` : "";
+    $("warn").hidden = !warn; set("warn", warn);
+    ["start_hz", "start_delay", "stop_hz", "stop_delay", "min_hz"].forEach((k) => {
       const v = this._n(c[k]);
       set(`v_${k}`, v === null ? "—" : (k.endsWith("hz") ? v.toFixed(1) : v.toFixed(0)));
     });
@@ -2415,6 +2448,13 @@ class HamletPumpHouseCard extends HTMLElement {
       .assist { margin-top: 12px; background: rgba(0,0,0,.2); border-radius: 10px; padding: 8px 10px; transition: opacity .3s; }
       .assist.dim { opacity: .45; }
       .ah { font-size: 10px; letter-spacing: 1.2px; opacity: .65; margin: 4px 0; }
+      .meth { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin: 4px 0; }
+      .mb { border-radius: 8px; padding: 8px 4px; font-size: 12px; font-weight: 800; background: linear-gradient(180deg, #6b7079, #4b5058 60%, #3d4148); box-shadow: 0 2px 0 rgba(0,0,0,.5); }
+      .mb.on { background: linear-gradient(180deg, #6dd6fa 0%, #33b2e6 55%, #1f9ad3 100%); box-shadow: 0 0 0 2px #e9f8ff; }
+      .mhint { font-size: 11px; opacity: .7; margin: 2px 0 6px; line-height: 1.3; }
+      .warn { margin-top: 6px; font-size: 12px; font-weight: 700; color: #ffb020; }
+      .warn[hidden] { display: none; }
+      .minbox { margin-top: 8px; }
       .set { display: grid; grid-template-columns: 1fr 36px 84px 36px; align-items: center; gap: 6px; margin: 4px 0; }
       .sl { font-size: 13px; }
       .sv { text-align: center; font-family: monospace; font-size: 15px; }

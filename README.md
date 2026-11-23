@@ -230,6 +230,12 @@ Use `examples/cp2000_two_pumps_package.yaml` (instead of the single-pump file) a
 
 Runs in Home Assistant (an automation), so it works with the dashboard closed. No wiring between the drives is needed — everything goes over RS-485.
 
+**How the slave helps** (buttons on the Pump House card):
+- *Own pressure*: slave in APP AUTO on the master's setpoint (its own PID; it can go to sleep when the pressure is near the setpoint).
+- *Follow master*: slave in APP MAN at the master's speed (manual speed D144), never below *min speed*; the master's PID holds the setpoint and the slave follows it down. When the slave stops it is put back in APP AUTO.
+
+**Min speed, both pumps**: written to both pumps' program minimum speed (D272) when changed; 0 = leave the pumps' own setting. Keep *drops below* above it, otherwise the slave never stops (the card warns).
+
 While the slave's start or stop delay is running, the Pump House card shows a countdown (e.g. *⏱ Pump 1 starts in 1:22*) with a progress bar. It reads `binary_sensor.pump_house_assist_start` / `binary_sensor.pump_house_assist_stop` from the controller file (v1.15.0 or newer of `pump_house_controller.yaml`).
 
 ## Pump timer (TIMER key)
