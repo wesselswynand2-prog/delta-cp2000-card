@@ -178,6 +178,11 @@ automation:
                   - delay: { seconds: 2 }
                   - action: modbus.write_register     # back to APP AUTO (D394 = 1)
                     data: { hub: vfd, slave: "{{ slave_plc }}", address: 4490, value: 1 }
+          # ---- OWN PRESSURE selected while the slave is still in APP MAN: back to APP AUTO ----
+          - conditions: "{{ not follow and slave_mode == 2 }}"
+            sequence:
+              - action: modbus.write_register         # slave -> APP AUTO (D394 = 1), keeps running
+                data: { hub: vfd, slave: "{{ slave_plc }}", address: 4490, value: 1 }
           # ---- FOLLOW: keep the running slave at the master's speed ----
           - conditions: "{{ follow and slave_mode == 2 and slave_running and (follow_hz - slave_hz) | abs >= 1 }}"
             sequence:
