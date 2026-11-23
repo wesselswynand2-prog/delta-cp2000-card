@@ -234,7 +234,7 @@ Runs in Home Assistant (an automation), so it works with the dashboard closed. N
 
 Lets the client set **start / stop times per weekday** on the card: up to 3 run periods per day, and a period may run past midnight (e.g. 22:00 – 02:00).
 
-1. Install the timer package next to the Modbus package:
+1. Install ONE timer package next to the Modbus package (not both):
    - one pump: [`examples/pump_timer.yaml`](examples/pump_timer.yaml)
    - two pumps: [`examples/pump_timers_two_pumps.yaml`](examples/pump_timers_two_pumps.yaml)
 
@@ -247,7 +247,7 @@ Lets the client set **start / stop times per weekday** on the card: up to 3 run 
 
 How it runs: at a start time the pump is started (D395 = 1); a pump in PANEL mode is first switched to APP AUTO (D394 = 1). At a stop time it is stopped (D395 = 0). Switching the timer ON applies the schedule straight away. A manual RUN / STOP from the card still works; the timer acts again at the next start or stop time. With the Pump House controller in a master mode, the slave pump ignores its own timer and follows the master.
 
-Entities (per pump; `pump2_…` for pump 2): `input_text.pump_timer` (the schedule), `input_boolean.pump_timer` (ON / OFF), `binary_sensor.pump_timer_active`. Other names: set them under *Pump timer* in the card editor (`timer: { schedule:, enable: }`).
+Entities (per pump; `pump2_…` for pump 2): `input_text.pump_timer` (the schedule), `input_boolean.pump_timer` (ON / OFF), `binary_sensor.pump_timer_on`. Other names: set them under *Pump timer* in the card editor (`timer: { schedule:, enable: }`).
 
 ## Settings menu (MENU key)
 

@@ -13,7 +13,7 @@
  *   2101H (8449)  read   drive status word
  */
 
-const CARD_VERSION = "1.14.0";
+const CARD_VERSION = "1.14.1";
 
 // Hamlet Elektries logo (white, transparent background) — built in so no upload is needed.
 const HAMLET_LOGO =
@@ -1300,8 +1300,14 @@ class DeltaCP2000Card extends HTMLElement {
         }
       }
       const txt = this._timerSerialize(tm.data);
-      this._timerGuard(() => this._hass.callService("input_text", "set_value", { entity_id: this._timerIds().schedule, value: txt })
-        .then(() => { tm.dirty = false; this._toast(`${this._config.name}: timer saved`); this._timerRender(); })
+      const id = this._timerIds().schedule;
+      this._timerGuard(() => this._hass.callService("input_text", "set_value", { entity_id: id, value: txt })
+        .then(() => new Promise((res) => setTimeout(res, 1500)))
+        .then(() => {
+          const now = this._hass.states[id];
+          if (!now || now.state !== txt) { this._toast(`Timer NOT stored in Home Assistant (${id}) — check the timer package`); return; }
+          tm.dirty = false; this._toast(`${this._config.name}: timer saved`); this._timerRender();
+        })
         .catch((e) => this._toast(`Timer save failed — ${e.message || e}`)));
     };
     if (tm.pin) {
