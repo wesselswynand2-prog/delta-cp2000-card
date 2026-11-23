@@ -230,6 +230,25 @@ Use `examples/cp2000_two_pumps_package.yaml` (instead of the single-pump file) a
 
 Runs in Home Assistant (an automation), so it works with the dashboard closed. No wiring between the drives is needed — everything goes over RS-485.
 
+## Pump timer (TIMER key)
+
+Lets the client set **start / stop times per weekday** on the card: up to 3 run periods per day, and a period may run past midnight (e.g. 22:00 – 02:00).
+
+1. Install the timer package next to the Modbus package:
+   - one pump: [`examples/pump_timer.yaml`](examples/pump_timer.yaml)
+   - two pumps: [`examples/pump_timers_two_pumps.yaml`](examples/pump_timers_two_pumps.yaml)
+
+   ```bash
+   curl -fsSL https://raw.githubusercontent.com/wesselswynand2-prog/delta-cp2000-card/main/examples/pump_timer.yaml > /config/packages/pump_timer.yaml && ha core check && ha core restart
+   ```
+   Different PLC address than 2 (or 4)? Change the `slave:` numbers in the file.
+2. The **AUTO** key on the card becomes **TIMER** (any key can be set to the `timer` function). It opens the timer panel: pick a day, type START – STOP, *Copy to Mon–Fri* / *Copy to all days*, **SAVE**. Switching the timer ON / OFF and saving ask for the card PIN.
+3. The INFO page shows the next start (`Tm`).
+
+How it runs: at a start time the pump is started (D395 = 1); a pump in PANEL mode is first switched to APP AUTO (D394 = 1). At a stop time it is stopped (D395 = 0). Switching the timer ON applies the schedule straight away. A manual RUN / STOP from the card still works; the timer acts again at the next start or stop time. With the Pump House controller in a master mode, the slave pump ignores its own timer and follows the master.
+
+Entities (per pump; `pump2_…` for pump 2): `input_text.pump_timer` (the schedule), `input_boolean.pump_timer` (ON / OFF), `binary_sensor.pump_timer_active`. Other names: set them under *Pump timer* in the card editor (`timer: { schedule:, enable: }`).
+
 ## Settings menu (MENU key)
 
 **MENU** opens a settings menu on the LCD, like the drive's own keypad:
@@ -276,7 +295,7 @@ keys:
   auto: { function: press, entity: script.pump_auto_mode }
 ```
 
-Defaults: F1 Main, F2 Power, F3 Motor, F4 Info, MENU = all values, HAND / AUTO = nothing.
+Defaults: F1 Main, F2 Power, F3 Motor, F4 Info, MENU = settings menu, HAND = nothing, AUTO = pump timer (TIMER).
 
 ## Registers used
 

@@ -1,0 +1,151 @@
+# ---------------------------------------------------------------------------
+# Pump timer — Hamlet Elektries  (Delta CP2000 + Hamlet "Single Pump V9" program)
+#
+# Lets the client set start / stop times per weekday on the pump card (TIMER key).
+# Up to 3 run periods per day; a period may run over midnight (e.g. 22:00 - 02:00).
+#
+#   input_text.pump_timer          the week's schedule (written by the card)
+#   input_boolean.pump_timer       timer ON / OFF
+#   binary_sensor.pump_timer_active  on while inside a run period
+#
+# At a start time the pump is started (D395 = 1); a pump in PANEL mode is first
+# put in APP AUTO (D394 = 1). At a stop time it is stopped (D395 = 0).
+# Switching the timer ON applies the schedule right away (start or stop).
+# A manual RUN / STOP from the card still works; the timer acts again at the next start / stop time.
+# With the Pump House controller in a master mode, the slave pump ignores its own timer.
+#
+# Put this file in /config/packages/ and restart. PLC address: change "slave: N" below if yours differs.
+# No 'initial:' on purpose: Home Assistant keeps the schedule and ON/OFF after a restart.
+# ---------------------------------------------------------------------------
+# Two pumps: Pump 1 PLC 2 (sensor.pump_*), Pump 2 PLC 4 (sensor.pump2_*)
+
+input_text:
+  pump_timer:
+    name: Pump 1 timer schedule
+    max: 255
+    icon: mdi:calendar-clock
+  pump2_timer:
+    name: Pump 2 timer schedule
+    max: 255
+    icon: mdi:calendar-clock
+
+input_boolean:
+  pump_timer:
+    name: Pump 1 timer
+    icon: mdi:timer-outline
+  pump2_timer:
+    name: Pump 2 timer
+    icon: mdi:timer-outline
+
+template:
+  - binary_sensor:
+      - name: Pump 1 timer active
+        unique_id: pump_timer_active
+        icon: mdi:timer-play-outline
+        # schedule = 7 days Mon..Sun separated by "|", periods "HHMM-HHMM" separated by ","
+        state: >
+          {% set days = states('input_text.pump_timer').split('|') %}
+          {% set t = now().hour * 60 + now().minute %}
+          {% set d = now().weekday() %}
+          {% set ns = namespace(on=false) %}
+          {% if days | count == 7 %}
+            {% for p in days[d].split(',') if p | length == 9 %}
+              {% set a = (p[0:2] | int) * 60 + (p[2:4] | int) %}
+              {% set b = (p[5:7] | int) * 60 + (p[7:9] | int) %}
+              {% if (a < b and t >= a and t < b) or (a > b and t >= a) %}{% set ns.on = true %}{% endif %}
+            {% endfor %}
+            {% for p in days[(d + 6) % 7].split(',') if p | length == 9 %}
+              {% set a = (p[0:2] | int) * 60 + (p[2:4] | int) %}
+              {% set b = (p[5:7] | int) * 60 + (p[7:9] | int) %}
+              {% if a > b and t < b %}{% set ns.on = true %}{% endif %}
+            {% endfor %}
+          {% endif %}
+          {{ ns.on }}
+      - name: Pump 2 timer active
+        unique_id: pump2_timer_active
+        icon: mdi:timer-play-outline
+        # schedule = 7 days Mon..Sun separated by "|", periods "HHMM-HHMM" separated by ","
+        state: >
+          {% set days = states('input_text.pump2_timer').split('|') %}
+          {% set t = now().hour * 60 + now().minute %}
+          {% set d = now().weekday() %}
+          {% set ns = namespace(on=false) %}
+          {% if days | count == 7 %}
+            {% for p in days[d].split(',') if p | length == 9 %}
+              {% set a = (p[0:2] | int) * 60 + (p[2:4] | int) %}
+              {% set b = (p[5:7] | int) * 60 + (p[7:9] | int) %}
+              {% if (a < b and t >= a and t < b) or (a > b and t >= a) %}{% set ns.on = true %}{% endif %}
+            {% endfor %}
+            {% for p in days[(d + 6) % 7].split(',') if p | length == 9 %}
+              {% set a = (p[0:2] | int) * 60 + (p[2:4] | int) %}
+              {% set b = (p[5:7] | int) * 60 + (p[7:9] | int) %}
+              {% if a > b and t < b %}{% set ns.on = true %}{% endif %}
+            {% endfor %}
+          {% endif %}
+          {{ ns.on }}
+
+automation:
+  - id: pump_timer
+    alias: Pump 1 - timer
+    description: Starts / stops Pump 1 at the times set on the card (TIMER key).
+    mode: queued
+    max: 5
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.pump_timer_active
+        from: ["on", "off"]
+        to: ["on", "off"]
+      - trigger: state
+        entity_id: input_boolean.pump_timer
+        to: "on"
+    conditions:
+      - condition: state
+        entity_id: input_boolean.pump_timer
+        state: "on"
+      - condition: template   # Pump House master mode: the slave follows its master, not its own timer
+        value_template: "{{ states('input_select.pump_house_mode') != 'Pump 2 master' }}"
+    actions:
+      - if: "{{ is_state('binary_sensor.pump_timer_active', 'on') }}"
+        then:
+          - if: "{{ states('sensor.pump_app_control_mode') | int(0) == 0 }}"
+            then:
+              - action: modbus.write_register   # PANEL -> APP AUTO (D394 = 1)
+                data: { hub: vfd, slave: 2, address: 4490, value: 1 }
+              - delay: { seconds: 2 }
+          - action: modbus.write_register       # RUN (D395 = 1)
+            data: { hub: vfd, slave: 2, address: 4491, value: 1 }
+        else:
+          - action: modbus.write_register       # STOP (D395 = 0)
+            data: { hub: vfd, slave: 2, address: 4491, value: 0 }
+  - id: pump2_timer
+    alias: Pump 2 - timer
+    description: Starts / stops Pump 2 at the times set on the card (TIMER key).
+    mode: queued
+    max: 5
+    triggers:
+      - trigger: state
+        entity_id: binary_sensor.pump2_timer_active
+        from: ["on", "off"]
+        to: ["on", "off"]
+      - trigger: state
+        entity_id: input_boolean.pump2_timer
+        to: "on"
+    conditions:
+      - condition: state
+        entity_id: input_boolean.pump2_timer
+        state: "on"
+      - condition: template   # Pump House master mode: the slave follows its master, not its own timer
+        value_template: "{{ states('input_select.pump_house_mode') != 'Pump 1 master' }}"
+    actions:
+      - if: "{{ is_state('binary_sensor.pump2_timer_active', 'on') }}"
+        then:
+          - if: "{{ states('sensor.pump2_app_control_mode') | int(0) == 0 }}"
+            then:
+              - action: modbus.write_register   # PANEL -> APP AUTO (D394 = 1)
+                data: { hub: vfd, slave: 4, address: 4490, value: 1 }
+              - delay: { seconds: 2 }
+          - action: modbus.write_register       # RUN (D395 = 1)
+            data: { hub: vfd, slave: 4, address: 4491, value: 1 }
+        else:
+          - action: modbus.write_register       # STOP (D395 = 0)
+            data: { hub: vfd, slave: 4, address: 4491, value: 0 }

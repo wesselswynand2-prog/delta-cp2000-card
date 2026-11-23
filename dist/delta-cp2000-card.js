@@ -13,7 +13,7 @@
  *   2101H (8449)  read   drive status word
  */
 
-const CARD_VERSION = "1.13.1";
+const CARD_VERSION = "1.14.0";
 
 // Hamlet Elektries logo (white, transparent background) — built in so no upload is needed.
 const HAMLET_LOGO =
@@ -94,6 +94,7 @@ const FUNCTIONS = [
   ["page_info", "LCD page: Info (kWh / hours)"],
   ["page_all", "LCD page: All values"],
   ["settings", "Settings menu (pump program + drive parameters)"],
+  ["timer", "Pump timer (start / stop times per weekday)"],
   ["preset", "Preset speed (Hz in 'Value')"],
   ["run", "Drive RUN"],
   ["stop", "Drive STOP"],
@@ -116,7 +117,7 @@ const KEY_DEFAULTS = {
   f4: { label: "INFO", function: "page_info" },
   menu: { function: "settings" },
   hand: { function: "none" },
-  auto: { function: "none" },
+  auto: { function: "timer" },
 };
 
 const LABELS = {
@@ -168,6 +169,8 @@ const LABELS = {
   run_register: "App start/stop/reset register (D395 = 4491)",
   entity_prefix: "Menu sensors: program prefix (pump, pump2…)",
   drive_prefix: "Menu sensors: drive prefix (vfd, vfd2…)",
+  schedule: "Timer schedule — input_text (empty = input_text.<prefix>_timer)",
+  enable: "Timer ON/OFF — input_boolean (empty = input_boolean.<prefix>_timer)",
   mode: "How does Home Assistant talk to the drive?",
   running: "Running (binary sensor / switch — on = running)",
   reverse: "Reverse (binary sensor / switch — on = REV)",
@@ -346,6 +349,11 @@ function buildSchema(config) {
           { name: "drive_prefix", selector: { text: {} } },
         ],
       }],
+    }, {
+      type: "expandable",
+      name: "timer",
+      title: "Pump timer (TIMER key) — needs the pump timer package",
+      schema: [ent("schedule", ["input_text"]), ent("enable", ["input_boolean"])],
     }] : []),
     {
       type: "expandable",
@@ -866,6 +874,7 @@ class DeltaCP2000Card extends HTMLElement {
     if (f === "preset") return k.value !== undefined ? (this._isPressure() ? `${k.value}` : `${k.value}Hz`) : "PRSET";
     if (["run", "stop", "fwd", "rev"].includes(f)) return f.toUpperCase();
     if (f === "reset") return "RST";
+    if (f === "timer") return "TIMER";
     if (k.entity && this._hass && this._hass.states[k.entity]) {
       const n = this._hass.states[k.entity].attributes.friendly_name || k.entity.split(".")[1];
       return n.toUpperCase();
@@ -878,6 +887,7 @@ class DeltaCP2000Card extends HTMLElement {
     const k = this._config.keys[name];
     const f = k.function || "none";
     if (f.startsWith("page_")) return this._page === f.slice(5);
+    if (f === "timer") { const t = this._timerIds(); const s = this._hass && this._hass.states[t.enable]; return !!s && s.state === "on"; }
     if (["toggle", "turn_on", "turn_off", "more_info"].includes(f) && k.entity && this._hass) {
       const s = this._hass.states[k.entity];
       return !!s && ["on", "open", "home", "heat", "playing", "active"].includes(s.state);
@@ -910,6 +920,7 @@ class DeltaCP2000Card extends HTMLElement {
       this._update();
       return;
     }
+    if (f === "timer") return this._timerToggle();
     switch (f) {
       case "preset": {
         const v = Number(k.value);
@@ -961,6 +972,7 @@ class DeltaCP2000Card extends HTMLElement {
       : `<img class="logo" src="${cfg.logo ? this._esc_(cfg.logo) : HAMLET_LOGO}" alt="Hamlet Elektries">`;
     const entMode = cfg.mode === "entities";
     const showRow = cfg.show_controls && (entMode || ["run", "stop", "reset"].some((k) => this._canControl(k)));
+    const bkTxt = (k, dflt) => (cfg.keys[k] && cfg.keys[k].function === "timer" ? "TIMER" : dflt);
 
     this.shadowRoot.innerHTML = `
       <style>${this._css()}</style>
@@ -1006,15 +1018,15 @@ class DeltaCP2000Card extends HTMLElement {
           <div class="pad">
             <button class="bk" id="k_esc">ESC</button>
             <button class="gk up" id="k_up" title="Speed up">${chev("up")}</button>
-            <button class="bk" data-key="menu" id="k_menu">MENU</button>
+            <button class="bk" data-key="menu" id="k_menu">${bkTxt("menu", "MENU")}</button>
 
             <button class="gk left" id="k_left" title="Previous page">${chev("left")}</button>
             <button class="enter" id="k_enter" title="Send speed to drive">ENTER</button>
             <button class="gk right" id="k_right" title="Next page">${chev("right")}</button>
 
-            <button class="bk" data-key="hand" id="k_hand">HAND</button>
+            <button class="bk" data-key="hand" id="k_hand">${bkTxt("hand", "HAND")}</button>
             <button class="gk down" id="k_down" title="Speed down">${chev("down")}</button>
-            <button class="bk" data-key="auto" id="k_auto">AUTO</button>
+            <button class="bk" data-key="auto" id="k_auto">${bkTxt("auto", "AUTO")}</button>
           </div>
 
           ${showRow ? `
@@ -1027,6 +1039,7 @@ class DeltaCP2000Card extends HTMLElement {
             <button class="stopkey" id="b_stop">STOP<br>RESET</button>
           </div>` : ""}
         </div>
+        <div class="tpanel" id="tpanel" hidden></div>
       </ha-card>`;
 
     const root = this.shadowRoot;
@@ -1118,6 +1131,7 @@ class DeltaCP2000Card extends HTMLElement {
       this._confirmThen(b, () => this._command(this._dirNext || "rev"));
     });
     this._built = true;
+    if (this._tm) this._timerRender();
   }
 
   _tapBox(b) {
@@ -1127,6 +1141,181 @@ class DeltaCP2000Card extends HTMLElement {
     if (!id || bc.tap === "none") return;
     if (bc.tap === "toggle") this._hass.callService("homeassistant", "toggle", { entity_id: id });
     else this._moreInfo(id);
+  }
+
+
+  /* ---------------- pump timer (TIMER key) ---------------- */
+  // schedule text: 7 days Mon..Sun separated by "|", each day up to 3 periods "HHMM-HHMM" separated by ","
+
+  _timerIds() {
+    const t = this._config.timer || {};
+    const pre = (this._config.plc && this._config.plc.entity_prefix) || "pump";
+    return { schedule: t.schedule || `input_text.${pre}_timer`, enable: t.enable || `input_boolean.${pre}_timer` };
+  }
+
+  _timerExists() {
+    const t = this._timerIds();
+    return !!(this._hass && this._hass.states[t.schedule] && this._hass.states[t.enable]);
+  }
+
+  _timerEnabled() {
+    const s = this._hass && this._hass.states[this._timerIds().enable];
+    return !!s && s.state === "on";
+  }
+
+  _timerParse(txt) {
+    const days = String(txt || "").split("|");
+    const out = [];
+    for (let d = 0; d < 7; d++) {
+      const per = String(days[d] || "").split(",").filter((p) => /^\d{4}-\d{4}$/.test(p))
+        .map((p) => [`${p.slice(0, 2)}:${p.slice(2, 4)}`, `${p.slice(5, 7)}:${p.slice(7, 9)}`]);
+      while (per.length < 3) per.push(["", ""]);
+      out.push(per.slice(0, 3));
+    }
+    return out;
+  }
+
+  _timerSerialize(data) {
+    return data.map((day) => day.filter(([a, b]) => a && b).map(([a, b]) => a.replace(":", "") + "-" + b.replace(":", "")).join(",")).join("|");
+  }
+
+  // { active, next: {start|stop, minutes from now, label} } from the SAVED schedule
+  _timerCalc() {
+    const st = this._hass && this._hass.states[this._timerIds().schedule];
+    const data = this._timerParse(st ? st.state : "");
+    const now = new Date();
+    const today = (now.getDay() + 6) % 7;            // 0 = Monday
+    const t = now.getHours() * 60 + now.getMinutes();
+    const m = (hm) => Number(hm.slice(0, 2)) * 60 + Number(hm.slice(3, 5));
+    let active = false, next = null;
+    for (let o = -1; o <= 7; o++) {
+      const day = data[(today + o + 7) % 7];
+      for (const [a, b] of day) {
+        if (!a || !b || a === b) continue;
+        const s = o * 1440 + m(a), e = o * 1440 + m(b) + (m(b) <= m(a) ? 1440 : 0);
+        if (s <= t && t < e) active = true;
+        for (const [kind, at] of [["start", s], ["stop", e]]) {
+          if (at > t && (!next || at < next.at)) next = { kind, at };
+        }
+      }
+    }
+    if (next) {
+      const dd = Math.floor(next.at / 1440), hm = ((next.at % 1440) + 1440) % 1440;
+      const hhmm = `${String(Math.floor(hm / 60)).padStart(2, "0")}:${String(hm % 60).padStart(2, "0")}`;
+      const dayName = dd === 0 ? "" : dd === 1 ? "tomorrow " : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][(today + dd) % 7] + " ";
+      next.label = `${dayName}${hhmm}`;
+    }
+    return { active, next };
+  }
+
+  _timerSummary(short) {
+    if (!this._timerExists()) return short ? "—" : "Timer not set up";
+    if (!this._timerEnabled()) return short ? "OFF" : "Timer is OFF — the pump is not started by the timer";
+    const c = this._timerCalc();
+    if (!c.next) return short ? "no times" : "Timer ON — no times set yet";
+    if (short) return c.active ? `to ${c.next.label}` : `${c.next.label}`;
+    return c.active ? `Run period now — stops ${c.next.label}` : `Next start ${c.next.label}`;
+  }
+
+  _timerToggle() {
+    if (this._tm) { this._tm = null; this._timerRender(); return; }
+    if (!this._timerExists()) {
+      const t = this._timerIds();
+      this._toast(`Timer not set up — install the pump timer package (${t.schedule} / ${t.enable})`);
+      return;
+    }
+    const st = this._hass.states[this._timerIds().schedule];
+    this._tm = { day: (new Date().getDay() + 6) % 7, data: this._timerParse(st.state), dirty: false, pin: null };
+    this._timerRender();
+  }
+
+  _timerUnlocked() {
+    return !this._config.pin || (this._pinUntil && Date.now() < this._pinUntil);
+  }
+
+  _timerGuard(fn) {
+    if (this._timerUnlocked()) return fn();
+    this._tm.pin = fn;
+    this._timerRender();
+  }
+
+  _timerRender() {
+    const el = this.shadowRoot && this.shadowRoot.getElementById("tpanel");
+    if (!el) return;
+    const tm = this._tm;
+    if (!tm) { el.hidden = true; el.innerHTML = ""; return; }
+    const D = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+    const en = this._timerEnabled();
+    const has = (d) => tm.data[d].some(([a, b]) => a && b);
+    el.hidden = false;
+    el.innerHTML = `
+      <div class="th"><span class="tt">PUMP TIMER</span>
+        <button class="tbtn tog ${en ? "on" : ""}" id="t_en">${en ? "TIMER ON" : "TIMER OFF"}</button>
+        <button class="tbtn tx" id="t_close" title="Close">✕</button></div>
+      <div class="tstat" id="t_stat">${this._esc_(this._timerSummary(false))}</div>
+      <div class="tdays">${D.map((n, i) => `<button class="tday ${i === tm.day ? "sel" : ""} ${has(i) ? "has" : ""}" data-day="${i}">${n}</button>`).join("")}</div>
+      <div class="trows">${tm.data[tm.day].map(([a, b], r) => `
+        <div class="trow"><span class="tn">${r + 1}</span>
+          <input type="time" class="ttime" data-r="${r}" data-c="0" value="${a}">
+          <span class="tdash">–</span>
+          <input type="time" class="ttime" data-r="${r}" data-c="1" value="${b}">
+          <button class="tbtn tclr" data-clr="${r}" title="Clear">✕</button></div>`).join("")}
+      </div>
+      <div class="thint">START – STOP · a stop before the start runs past midnight</div>
+      <div class="tact">
+        <button class="tbtn" id="t_copywk">Copy to Mon–Fri</button>
+        <button class="tbtn" id="t_copyall">Copy to all days</button>
+      </div>
+      ${tm.pin ? `<div class="tpin"><input type="password" id="t_pin" class="ttime" inputmode="numeric" placeholder="PIN" autocomplete="off"><button class="tbtn" id="t_pinok">OK</button></div>` : ""}
+      <div class="tact"><button class="tbtn save ${tm.dirty ? "dirty" : ""}" id="t_save">${tm.dirty ? "SAVE CHANGES" : "SAVED"}</button></div>`;
+    const $ = (id) => el.querySelector(`#${id}`);
+    $("t_close").onclick = () => {
+      if (tm.dirty && !tm.closeWarned) { tm.closeWarned = true; this._toast("Changes not saved — press ✕ again to close without saving"); return; }
+      this._tm = null; this._timerRender();
+    };
+    el.querySelectorAll("[data-day]").forEach((b) => (b.onclick = () => { tm.day = Number(b.dataset.day); this._timerRender(); }));
+    el.querySelectorAll("input[data-r]").forEach((inp) => (inp.onchange = () => {
+      tm.data[tm.day][Number(inp.dataset.r)][Number(inp.dataset.c)] = inp.value || "";
+      tm.dirty = true; tm.closeWarned = false;
+      const sv = $("t_save"); sv.classList.add("dirty"); sv.textContent = "SAVE CHANGES";
+      el.querySelectorAll("[data-day]")[tm.day].classList.toggle("has", has(tm.day));
+    }));
+    el.querySelectorAll("[data-clr]").forEach((b) => (b.onclick = () => {
+      tm.data[tm.day][Number(b.dataset.clr)] = ["", ""]; tm.dirty = true; this._timerRender();
+    }));
+    const copy = (days) => { days.forEach((d) => { tm.data[d] = tm.data[tm.day].map((p) => [...p]); }); tm.dirty = true; this._timerRender(); };
+    $("t_copywk").onclick = () => copy([0, 1, 2, 3, 4]);
+    $("t_copyall").onclick = () => copy([0, 1, 2, 3, 4, 5, 6]);
+    $("t_en").onclick = () => this._timerGuard(() => {
+      const id = this._timerIds().enable;
+      return this._hass.callService("input_boolean", "toggle", { entity_id: id })
+        .then(() => this._toast(`${this._config.name}: timer ${this._timerEnabled() ? "OFF" : "ON"}`))
+        .catch((e) => this._toast(`Timer: ${e.message || e}`));
+    });
+    $("t_save").onclick = () => {
+      for (const [d, day] of tm.data.entries()) {
+        for (const [a, b] of day) {
+          if ((a && !b) || (!a && b)) { tm.day = d; this._timerRender(); this._toast(`${D[d]}: fill in both START and STOP (or clear the row)`); return; }
+          if (a && a === b) { tm.day = d; this._timerRender(); this._toast(`${D[d]}: START and STOP are the same`); return; }
+        }
+      }
+      const txt = this._timerSerialize(tm.data);
+      this._timerGuard(() => this._hass.callService("input_text", "set_value", { entity_id: this._timerIds().schedule, value: txt })
+        .then(() => { tm.dirty = false; this._toast(`${this._config.name}: timer saved`); this._timerRender(); })
+        .catch((e) => this._toast(`Timer save failed — ${e.message || e}`)));
+    };
+    if (tm.pin) {
+      const pin = $("t_pin");
+      const ok = () => {
+        if (String(pin.value) === String(this._config.pin)) {
+          this._pinUntil = Date.now() + 10 * 60 * 1000;
+          const fn = tm.pin; tm.pin = null; this._timerRender(); fn();
+        } else { this._toast("Wrong PIN"); pin.value = ""; pin.focus(); }
+      };
+      $("t_pinok").onclick = ok;
+      pin.addEventListener("keydown", (ev) => { if (ev.key === "Enter") { ev.preventDefault(); ok(); } });
+      setTimeout(() => pin.focus(), 50);
+    }
   }
 
   /* ---------------- settings menu (MENU key) ---------------- */
@@ -1530,7 +1719,8 @@ class DeltaCP2000Card extends HTMLElement {
           : this._line("run_hours", "h", f(n("run_hours"), 0), "Hr")) +
         (am !== null
           ? this._line("app_mode", "C", ["PANEL", "APP AUTO", "APP MAN"][am] || String(am), "")
-          : this._line("fault", "Er", wcode ? `W${wcode}` : "none", ""));
+          : this._line("fault", "Er", wcode ? `W${wcode}` : "none", "")) +
+        (this._timerExists() ? this._line("", "Tm", this._esc_(this._timerSummary(true)), "") : "");
     } else {
       const rows = [
         ["frequency_command", "F cmd", 2, "Hz"], ["output_frequency", "Out", 2, "Hz"],
@@ -1572,6 +1762,12 @@ class DeltaCP2000Card extends HTMLElement {
     for (const k of ["menu", "hand", "auto"]) {
       const b = $(`k_${k}`);
       if (b) b.classList.toggle("lit", this._keyActive(k));
+    }
+    if (this._tm && $("t_stat")) {
+      set("t_stat", this._timerSummary(false));
+      const en = this._timerEnabled();
+      $("t_en").classList.toggle("on", en);
+      set("t_en", en ? "TIMER ON" : "TIMER OFF");
     }
   }
 
@@ -1675,6 +1871,32 @@ class DeltaCP2000Card extends HTMLElement {
       .pill.standby .dot { background: var(--vfd-amber); }
       .pill.offline { color: #9aa3ae; }
       @keyframes pulse { 50% { opacity: .35; } }
+
+      .tpanel { margin-top: 12px; padding: 12px; border-radius: 12px; background: #1b1c1f; border: 1px solid rgba(255,255,255,.08); }
+      .tpanel[hidden] { display: none; }
+      .tpanel .th { display: flex; align-items: center; gap: 8px; }
+      .tpanel .tt { font-weight: 800; letter-spacing: 2px; font-size: 13px; flex: 1; }
+      .tpanel .tbtn { font: inherit; font-size: 12px; font-weight: 700; color: #e8edf3; background: #3b3f45; border: 0; border-radius: 8px; padding: 8px 10px; cursor: pointer; }
+      .tpanel .tbtn:active { transform: translateY(1px); }
+      .tpanel .tog.on { background: #2e9e57; }
+      .tpanel .tx { padding: 8px 11px; }
+      .tpanel .tstat { margin: 8px 0 10px; font-size: 12px; color: #aeb6c2; }
+      .tpanel .tdays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+      .tpanel .tday { font: inherit; font-size: 11px; font-weight: 700; padding: 8px 0; border-radius: 7px; border: 0; background: #2a2d32; color: #c8cfd8; cursor: pointer; position: relative; }
+      .tpanel .tday.has::after { content: ""; position: absolute; left: 50%; bottom: 3px; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; background: #3fbf6a; }
+      .tpanel .tday.sel { background: var(--vfd-accent); color: #fff; }
+      .tpanel .trows { margin-top: 10px; display: grid; gap: 6px; }
+      .tpanel .trow { display: grid; grid-template-columns: 16px 1fr 10px 1fr auto; align-items: center; gap: 6px; }
+      .tpanel .tn { font-size: 12px; color: #8a94a3; text-align: center; }
+      .tpanel .tdash { text-align: center; color: #8a94a3; }
+      .tpanel .ttime { font: inherit; font-size: 14px; min-width: 0; width: 100%; box-sizing: border-box; padding: 7px 6px; border-radius: 7px; border: 1px solid rgba(255,255,255,.12); background: #dfe1fb; color: #1b1e46; color-scheme: light; }
+      .tpanel .tclr { padding: 7px 9px; background: #2a2d32; }
+      .tpanel .thint { margin-top: 6px; font-size: 10px; color: #8a94a3; }
+      .tpanel .tact { display: flex; gap: 6px; margin-top: 10px; }
+      .tpanel .tact .tbtn { flex: 1; }
+      .tpanel .tpin { display: flex; gap: 6px; margin-top: 10px; }
+      .tpanel .save { background: #2a2d32; color: #8a94a3; }
+      .tpanel .save.dirty { background: var(--vfd-accent); color: #fff; }
 
       /* ---------- keypad body ---------- */
       .keypad {
