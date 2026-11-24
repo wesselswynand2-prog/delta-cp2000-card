@@ -232,7 +232,7 @@ Runs in Home Assistant (an automation), so it works with the dashboard closed. N
 
 **How the slave helps** (buttons on the Pump House card):
 - *Own pressure*: slave in APP AUTO on the master's setpoint (its own PID; it can go to sleep when the pressure is near the setpoint).
-- *Follow master*: slave in APP MAN at the master's speed (manual speed D144), never below *min speed*; the master's PID holds the setpoint and the slave follows it down. When the slave stops it is put back in APP AUTO.
+- *Full speed* ("base + trim"): the slave gets **master setpoint + boost** (default 1.0 bar), so its own PID runs it flat out while the master trims to hold the setpoint. The program puts the slave to sleep by itself above 110 % of that setpoint (Sleep %), which also guards against over-pressure. When the slave stops it gets the master's setpoint back. Swap the pumps with *Pump 1 master* / *Pump 2 master*; the card labels them **TRIM** and **FULL**.
 
 **Min speed, both pumps**: written to both pumps' program minimum speed (D272) when changed; 0 = leave the pumps' own setting. Keep *drops below* above it, otherwise the slave never stops (the card warns).
 

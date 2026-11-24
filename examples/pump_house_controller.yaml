@@ -13,9 +13,12 @@
 # How the slave helps (input_select.pump_house_assist_method):
 #   Own pressure    slave in APP AUTO with the master's setpoint (its own PID; it may
 #                   go to sleep when the pressure is close to the setpoint)
-#   Follow master   slave in APP MAN at the master's speed (never below Min speed);
-#                   the master's PID holds the setpoint, the slave follows it down.
-#                   When the slave stops it goes back to APP AUTO.
+#   Full speed      "base + trim": the slave gets setpoint = master setpoint + boost
+#                   (input_number.pump_house_full_boost), so its own PID runs it flat
+#                   out, while the master trims to hold the setpoint. The program puts
+#                   the slave to sleep by itself above 110 % of that setpoint (Sleep %),
+#                   which also guards against over-pressure. When the slave stops it
+#                   gets the master's setpoint back.
 #
 # Min speed, both pumps (input_number.pump_house_min_hz): written to both pumps'
 # program minimum speed (D272) when changed. 0 = leave the pumps' own setting alone.
@@ -37,10 +40,17 @@ input_select:
     name: Pump house assist method
     options:
       - Own pressure
-      - Follow master
+      - Full speed
     icon: mdi:call-split
 
 input_number:
+  pump_house_full_boost:
+    name: Full speed - setpoint above master
+    min: 0.3
+    max: 3
+    step: 0.1
+    unit_of_measurement: bar
+    mode: box
   pump_house_min_hz:
     name: Min speed both pumps
     min: 0
@@ -112,7 +122,7 @@ automation:
   # ---- 1. start / stop the slave (checks every 10 s, so a lost command is simply sent again) ----
   - id: pump_house_assist_controller
     alias: Pump house - master/slave assist
-    description: Starts / stops the slave pump from the master's speed; in Follow master keeps the slave at the master's speed.
+    description: Starts / stops the slave pump from the master's speed and keeps the slave's setpoint right (Own pressure = master setpoint, Full speed = master + boost).
     mode: single
     max_exceeded: silent
     triggers:
@@ -125,7 +135,11 @@ automation:
       plc2: 4          # Pump 2 PLC address
       m: "{{ states('input_select.pump_house_mode') }}"
       p1m: "{{ m == 'Pump 1 master' }}"
-      follow: "{{ is_state('input_select.pump_house_assist_method', 'Follow master') }}"
+      full: "{{ is_state('input_select.pump_house_assist_method', 'Full speed') }}"
+      boost: "{{ states('input_number.pump_house_full_boost') | float(1) }}"
+      master_sp: "{{ states('sensor.pump_setpoint' if p1m else 'sensor.pump2_setpoint') | float(-1) }}"
+      slave_sp: "{{ states('sensor.pump2_setpoint' if p1m else 'sensor.pump_setpoint') | float(-1) }}"
+      full_sp: "{{ ((master_sp + boost) * 100) | round(0) | int }}"
       min_hz: "{{ states('input_number.pump_house_min_hz') | float(0) }}"
       master_hz: "{{ states('sensor.vfd_output_frequency' if p1m else 'sensor.vfd2_output_frequency') | float(0) }}"
       slave_hz: "{{ states('sensor.vfd2_output_frequency' if p1m else 'sensor.vfd_output_frequency') | float(0) }}"
@@ -133,7 +147,6 @@ automation:
       slave_fault: "{{ is_state('binary_sensor.pump2_fault' if p1m else 'binary_sensor.pump_fault', 'on') }}"
       slave_mode: "{{ states('sensor.pump2_app_control_mode' if p1m else 'sensor.pump_app_control_mode') | int(-1) }}"
       slave_plc: "{{ plc2 if p1m else plc1 }}"
-      follow_hz: "{{ [master_hz, min_hz] | max }}"
       start_due: >
         {% set s = states.binary_sensor.pump_house_assist_start %}
         {{ s is not none and s.state == 'on' and (as_timestamp(now()) - as_timestamp(s.last_changed)) >= states('input_number.pump_house_start_delay') | float(30) }}
@@ -146,20 +159,20 @@ automation:
         value_template: "{{ m in ['Pump 1 master', 'Pump 2 master'] }}"
     actions:
       - choose:
-          # ---- master busy, FOLLOW: slave in APP MAN at the master's speed ----
-          - conditions: "{{ start_due and follow and not slave_running and not slave_fault }}"
+          # ---- master busy, FULL SPEED: slave on master setpoint + boost (its PID runs flat out) ----
+          - conditions: "{{ start_due and full and master_sp > 0 and not slave_running and not slave_sleep and not slave_fault }}"
             sequence:
-              - action: modbus.write_register         # manual speed (D144) = master Hz, not below min
-                data: { hub: vfd, slave: "{{ slave_plc }}", address: 4240, value: "{{ (follow_hz * 100) | round(0) | int }}" }
-              - if: "{{ slave_mode != 2 }}"
+              - action: modbus.write_register         # slave setpoint (D304) = master + boost
+                data: { hub: vfd, slave: "{{ slave_plc }}", address: 4400, value: "{{ full_sp }}" }
+              - if: "{{ slave_mode != 1 }}"
                 then:
-                  - action: modbus.write_register     # slave -> APP MAN (D394 = 2)
-                    data: { hub: vfd, slave: "{{ slave_plc }}", address: 4490, value: 2 }
+                  - action: modbus.write_register     # slave -> APP AUTO (D394 = 1)
+                    data: { hub: vfd, slave: "{{ slave_plc }}", address: 4490, value: 1 }
                   - delay: { seconds: 2 }
               - action: modbus.write_register         # slave RUN (D395 = 1)
                 data: { hub: vfd, slave: "{{ slave_plc }}", address: 4491, value: 1 }
           # ---- master busy, OWN PRESSURE: slave in APP AUTO on its own PID ----
-          - conditions: "{{ start_due and not follow and not slave_running and not slave_sleep and not slave_fault }}"
+          - conditions: "{{ start_due and not full and not slave_running and not slave_sleep and not slave_fault }}"
             sequence:
               - if: "{{ slave_mode != 1 }}"
                 then:
@@ -168,26 +181,31 @@ automation:
                   - delay: { seconds: 2 }
               - action: modbus.write_register         # slave RUN (D395 = 1)
                 data: { hub: vfd, slave: "{{ slave_plc }}", address: 4491, value: 1 }
-          # ---- master quiet: stop the slave (FOLLOW: back to APP AUTO) ----
-          - conditions: "{{ stop_due and (slave_running or slave_sleep or slave_mode == 2) }}"
+          # ---- master quiet: stop the slave, give it the master's setpoint back ----
+          - conditions: "{{ stop_due and (slave_running or slave_sleep) }}"
             sequence:
               - action: modbus.write_register         # slave STOP (D395 = 0)
                 data: { hub: vfd, slave: "{{ slave_plc }}", address: 4491, value: 0 }
-              - if: "{{ slave_mode == 2 }}"
+              - if: "{{ master_sp > 0 and (slave_sp - master_sp) | abs > 0.005 }}"
                 then:
-                  - delay: { seconds: 2 }
-                  - action: modbus.write_register     # back to APP AUTO (D394 = 1)
-                    data: { hub: vfd, slave: "{{ slave_plc }}", address: 4490, value: 1 }
-          # ---- OWN PRESSURE selected while the slave is still in APP MAN: back to APP AUTO ----
-          - conditions: "{{ not follow and slave_mode == 2 }}"
-            sequence:
-              - action: modbus.write_register         # slave -> APP AUTO (D394 = 1), keeps running
-                data: { hub: vfd, slave: "{{ slave_plc }}", address: 4490, value: 1 }
-          # ---- FOLLOW: keep the running slave at the master's speed ----
-          - conditions: "{{ follow and slave_mode == 2 and slave_running and (follow_hz - slave_hz) | abs >= 1 }}"
+                  - delay: { seconds: 1 }
+                  - action: modbus.write_register     # slave setpoint back to the master's
+                    data: { hub: vfd, slave: "{{ slave_plc }}", address: 4400, value: "{{ (master_sp * 100) | round(0) | int }}" }
+          # ---- a slave left in APP MAN (old Follow master): back to APP AUTO ----
+          - conditions: "{{ slave_mode == 2 }}"
             sequence:
               - action: modbus.write_register
-                data: { hub: vfd, slave: "{{ slave_plc }}", address: 4240, value: "{{ (follow_hz * 100) | round(0) | int }}" }
+                data: { hub: vfd, slave: "{{ slave_plc }}", address: 4490, value: 1 }
+          # ---- FULL SPEED running: keep the slave on master setpoint + boost ----
+          - conditions: "{{ full and master_sp > 0 and (slave_running or slave_sleep) and (slave_sp * 100 - full_sp) | abs > 2 }}"
+            sequence:
+              - action: modbus.write_register
+                data: { hub: vfd, slave: "{{ slave_plc }}", address: 4400, value: "{{ full_sp }}" }
+          # ---- OWN PRESSURE (or FULL SPEED stopped): slave on the master's setpoint ----
+          - conditions: "{{ master_sp > 0 and not (full and (slave_running or slave_sleep)) and (slave_sp - master_sp) | abs > 0.005 }}"
+            sequence:
+              - action: modbus.write_register
+                data: { hub: vfd, slave: "{{ slave_plc }}", address: 4400, value: "{{ (master_sp * 100) | round(0) | int }}" }
 
   # ---- 2. min speed for both pumps: written once, 3 s after the last change ----
   - id: pump_house_min_speed
@@ -210,27 +228,3 @@ automation:
       - delay: { seconds: 1 }
       - action: modbus.write_register         # Pump 2 program min speed (D272)
         data: { hub: vfd, slave: "{{ plc2 }}", address: 4368, value: "{{ v }}" }
-
-  # ---- 3. slave gets the master's setpoint (mode or setpoint changed) ----
-  - id: pump_house_setpoint_sync
-    alias: Pump house - copy master setpoint
-    mode: restart
-    triggers:
-      - trigger: state
-        entity_id: input_select.pump_house_mode
-      - trigger: state
-        entity_id: [sensor.pump_setpoint, sensor.pump2_setpoint]
-        for: { seconds: 3 }
-    variables:
-      plc1: 2
-      plc2: 4
-      m: "{{ states('input_select.pump_house_mode') }}"
-      p1m: "{{ m == 'Pump 1 master' }}"
-      master_sp: "{{ states('sensor.pump_setpoint' if p1m else 'sensor.pump2_setpoint') | float(-1) }}"
-      slave_sp: "{{ states('sensor.pump2_setpoint' if p1m else 'sensor.pump_setpoint') | float(-1) }}"
-    conditions:
-      - condition: template
-        value_template: "{{ m in ['Pump 1 master', 'Pump 2 master'] and master_sp >= 0 and (master_sp - slave_sp) | abs > 0.005 }}"
-    actions:
-      - action: modbus.write_register         # slave setpoint (D304)
-        data: { hub: vfd, slave: "{{ plc2 if p1m else plc1 }}", address: 4400, value: "{{ (master_sp * 100) | round(0) | int }}" }

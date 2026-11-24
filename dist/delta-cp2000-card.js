@@ -13,7 +13,7 @@
  *   2101H (8449)  read   drive status word
  */
 
-const CARD_VERSION = "1.17.0";
+const CARD_VERSION = "1.18.0";
 
 // Hamlet Elektries logo (white, transparent background) — built in so no upload is needed.
 const HAMLET_LOGO =
@@ -2155,6 +2155,7 @@ const PH_DEFAULTS = {
     status: "sensor.pump_house_status",
     method: "input_select.pump_house_assist_method",
     min_hz: "input_number.pump_house_min_hz",
+    full_boost: "input_number.pump_house_full_boost",
     start_timer: "binary_sensor.pump_house_assist_start",
     stop_timer: "binary_sensor.pump_house_assist_stop",
   },
@@ -2299,9 +2300,10 @@ class HamletPumpHouseCard extends HTMLElement {
           <div class="ah">THE SLAVE RUNS ON…</div>
           <div class="meth">
             <button class="mb" data-method="Own pressure" id="mt0">OWN PRESSURE</button>
-            <button class="mb" data-method="Follow master" id="mt1">FOLLOW MASTER</button>
+            <button class="mb" data-method="Full speed" id="mt1">FULL SPEED</button>
           </div>
           <div class="mhint" id="mhint">—</div>
+          <div id="boostrow">${setting("full_boost", "full pump: setpoint +", "bar")}</div>
           <div class="ah">SLAVE HELPS WHEN THE MASTER…</div>
           ${setting("start_hz", "runs above", "Hz")}
           ${setting("start_delay", "for", "s")}
@@ -2353,7 +2355,8 @@ class HamletPumpHouseCard extends HTMLElement {
       set(`st${i}`, offline ? "OFFLINE" : fault ? "FAULT" : sleep ? "SLEEP" : running ? "RUN" : "STOP");
       $(`bar${i}`).style.width = `${hz === null ? 0 : Math.min(100, (hz / (cfg.max_frequency || 50)) * 100)}%`;
       const role = masterIdx < 0 ? "SOLO" : masterIdx === i ? "MASTER" : "SLAVE";
-      set(`role${i}`, role);
+      const fullM = this._st(c.method) && this._st(c.method).state === "Full speed";
+      set(`role${i}`, fullM && role === "MASTER" ? "TRIM" : fullM && role === "SLAVE" ? "FULL" : role);
       $(`role${i}`).className = `role ${role.toLowerCase()}`;
       $(`p${i}`).className = `pump ${running ? "run" : ""} ${fault ? "fault" : ""} ${offline ? "off" : ""}`;
     });
@@ -2389,17 +2392,20 @@ class HamletPumpHouseCard extends HTMLElement {
     if (!timing && this._tick) { clearInterval(this._tick); this._tick = null; }
     const meth = this._st(c.method) ? this._st(c.method).state : null;
     $("mt0").classList.toggle("on", meth === "Own pressure");
-    $("mt1").classList.toggle("on", meth === "Follow master");
-    set("mhint", !meth ? "Update pump_house_controller.yaml for this option"
-      : meth === "Follow master" ? "Slave runs at the master's speed (APP MAN), never below min speed. Master holds the setpoint."
+    $("mt1").classList.toggle("on", meth === "Full speed");
+    const names = cfg.pumps.map((x) => x.name);
+    const mName = masterIdx >= 0 ? names[masterIdx] : "the master", sName = masterIdx >= 0 ? names[1 - masterIdx] : "the slave";
+    set("mhint", !meth || !["Own pressure", "Full speed"].includes(meth) ? "Update pump_house_controller.yaml for this option"
+      : meth === "Full speed" ? `${sName} runs flat out (setpoint = ${mName}'s + boost); ${mName} trims to hold the setpoint. Swap with the PUMP buttons above.`
       : "Slave uses its own pressure control on the master's setpoint (may sleep near the setpoint).");
+    $("boostrow").hidden = meth !== "Full speed";
     const minHz = this._n(c.min_hz), stopHz = this._n(c.stop_hz);
     const warn = minHz && stopHz !== null && stopHz <= minHz
       ? `"Drops below" (${stopHz.toFixed(1)} Hz) must be above min speed (${minHz.toFixed(1)} Hz) — otherwise the slave never stops.` : "";
     $("warn").hidden = !warn; set("warn", warn);
-    ["start_hz", "start_delay", "stop_hz", "stop_delay", "min_hz"].forEach((k) => {
+    ["start_hz", "start_delay", "stop_hz", "stop_delay", "min_hz", "full_boost"].forEach((k) => {
       const v = this._n(c[k]);
-      set(`v_${k}`, v === null ? "—" : (k.endsWith("hz") ? v.toFixed(1) : v.toFixed(0)));
+      set(`v_${k}`, v === null ? "—" : (k.endsWith("hz") || k === "full_boost" ? v.toFixed(1) : v.toFixed(0)));
     });
   }
 
@@ -2454,6 +2460,7 @@ class HamletPumpHouseCard extends HTMLElement {
       .mhint { font-size: 11px; opacity: .7; margin: 2px 0 6px; line-height: 1.3; }
       .warn { margin-top: 6px; font-size: 12px; font-weight: 700; color: #ffb020; }
       .warn[hidden] { display: none; }
+      #boostrow[hidden] { display: none; }
       .minbox { margin-top: 8px; }
       .set { display: grid; grid-template-columns: 1fr 36px 84px 36px; align-items: center; gap: 6px; margin: 4px 0; }
       .sl { font-size: 13px; }
