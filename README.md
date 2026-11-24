@@ -238,6 +238,23 @@ Runs in Home Assistant (an automation), so it works with the dashboard closed. N
 
 While the slave's start or stop delay is running, the Pump House card shows a countdown (e.g. *⏱ Pump 1 starts in 1:22*) with a progress bar. It reads `binary_sensor.pump_house_assist_start` / `binary_sensor.pump_house_assist_stop` from the controller file (v1.15.0 or newer of `pump_house_controller.yaml`).
 
+## History card
+
+`custom:hamlet-history-card` — several pump values over 6 h / 1 d / 3 d / 7 d in one chart, **each line on its own scale** (the left axis belongs to the first visible line). Hover or touch to read every value at that moment; tap a legend item to hide / show its line. The legend shows the value now and the highest / lowest over the period.
+
+```yaml
+type: custom:hamlet-history-card
+title: Pump 1 history
+pump: 1            # 1 = vfd_ / pump_ sensors, 2 = vfd2_ / pump2_
+hours: 24          # 6, 24, 72 or 168
+# entities:        # optional — your own list
+#   - entity: sensor.pump_pressure
+#     name: Pressure
+#     color: "#3b8beb"
+```
+
+Uses Home Assistant's recorder history (kept 10 days by default).
+
 ## Pump timer (TIMER key)
 
 Lets the client set **start / stop times per weekday** on the card: up to 3 run periods per day, and a period may run past midnight (e.g. 22:00 – 02:00).

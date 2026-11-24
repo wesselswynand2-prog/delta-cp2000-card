@@ -13,7 +13,7 @@
  *   2101H (8449)  read   drive status word
  */
 
-const CARD_VERSION = "1.16.0";
+const CARD_VERSION = "1.17.0";
 
 // Hamlet Elektries logo (white, transparent background) — built in so no upload is needed.
 const HAMLET_LOGO =
@@ -2469,6 +2469,329 @@ class HamletPumpHouseCard extends HTMLElement {
 }
 
 customElements.define("hamlet-pump-house-card", HamletPumpHouseCard);
+
+/* ===================================================================== */
+/*  Hamlet history card — several values over time, each on its own scale */
+/* ===================================================================== */
+
+const HH_COLORS = ["#ff4d5e", "#3b8beb", "#2ecc71", "#f39c12", "#9b59b6", "#1abc9c", "#e67e22", "#e84393"];
+const HH_PUMP = (n) => {
+  const d = n === 2 ? "vfd2" : "vfd", p = n === 2 ? "pump2" : "pump";
+  return [
+    { entity: `sensor.${p}_power`, name: "Power" },
+    { entity: `sensor.${p}_pressure`, name: "Pressure" },
+    { entity: `sensor.${d}_output_current`, name: "Amps" },
+    { entity: `sensor.${d}_output_frequency`, name: "Hz" },
+    { entity: `sensor.${d}_igbt_temperature`, name: "IGBT temp" },
+  ];
+};
+const HH_RANGES = [6, 24, 72, 168];
+
+class HamletHistoryCard extends HTMLElement {
+  static getStubConfig() { return { title: "Pump history", pump: 1, hours: 24 }; }
+  static getConfigElement() { return document.createElement("hamlet-history-card-editor"); }
+
+  setConfig(config) {
+    const pump = Number(config.pump) === 2 ? 2 : 1;
+    let ents = config.entities && config.entities.length ? config.entities : HH_PUMP(pump);
+    ents = ents.map((e, i) => (typeof e === "string" ? { entity: e } : { ...e }))
+      .filter((e) => e.entity)
+      .map((e, i) => ({ ...e, color: e.color || HH_COLORS[i % HH_COLORS.length] }));
+    this._config = { title: "Pump history", hours: 24, height: 220, logo: true, ...config, entities: ents };
+    this._hours = Number(this._config.hours) || 24;
+    this._hidden = this._hidden || new Set();
+    this._built = false;
+    this._data = null;
+    if (this._hass) { this._render(); this._load(); }
+  }
+
+  set hass(h) {
+    const first = !this._hass;
+    this._hass = h;
+    if (!this._config) return;
+    if (!this._built) this._render();
+    if (first || !this._data) this._load();
+    this._legend();
+  }
+
+  connectedCallback() {
+    this._timer = setInterval(() => this._load(), 5 * 60 * 1000);
+    if (!this._ro && window.ResizeObserver) {
+      this._ro = new ResizeObserver(() => this._draw());
+      this._ro.observe(this);
+    }
+  }
+  disconnectedCallback() { clearInterval(this._timer); if (this._ro) { this._ro.disconnect(); this._ro = null; } }
+  getCardSize() { return 5; }
+  getGridOptions() { return { columns: 12, min_columns: 6, rows: "auto" }; }
+
+  _esc(s) { return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
+  _name(e) {
+    const st = this._hass && this._hass.states[e.entity];
+    return e.name || (st && st.attributes.friendly_name) || e.entity;
+  }
+  _unit(e) {
+    const st = this._hass && this._hass.states[e.entity];
+    return e.unit ?? (st && st.attributes.unit_of_measurement) ?? "";
+  }
+  _fmt(v, e) {
+    if (v === null || v === undefined || !Number.isFinite(v)) return "—";
+    const u = String(this._unit(e)).toLowerCase();
+    const d = e.decimals ?? (["bar", "psi", "kpa"].includes(u) ? 2 : Math.abs(v) >= 100 ? 0 : 1);
+    return v.toFixed(d);
+  }
+
+  _render() {
+    if (!this.shadowRoot) this.attachShadow({ mode: "open" });
+    const cfg = this._config;
+    this.shadowRoot.innerHTML = `
+      <style>${this._css()}</style>
+      <ha-card>
+        <div class="head">
+          ${cfg.logo ? `<img class="logo" src="${HAMLET_LOGO}" alt="Hamlet Elektries">` : ""}
+          <div class="title">${this._esc(cfg.title)}</div>
+          <div class="ranges">${HH_RANGES.map((h) => `<button class="rb" data-h="${h}">${h < 24 ? h + "h" : h / 24 + "d"}</button>`).join("")}</div>
+        </div>
+        <div class="legend" id="legend"></div>
+        <div class="plot" id="plot"><div class="msg" id="msg">Loading history…</div></div>
+      </ha-card>`;
+    this.shadowRoot.querySelectorAll(".rb").forEach((b) => b.addEventListener("click", () => {
+      this._hours = Number(b.dataset.h); this._data = null; this._load(); this._ranges();
+    }));
+    this._built = true;
+    this._ranges();
+    this._legend();
+  }
+
+  _ranges() {
+    this.shadowRoot.querySelectorAll(".rb").forEach((b) => b.classList.toggle("on", Number(b.dataset.h) === this._hours));
+  }
+
+  async _load() {
+    if (!this._hass || !this._config || this._loading) return;
+    this._loading = true;
+    const end = new Date(), start = new Date(end.getTime() - this._hours * 3600 * 1000);
+    const ids = this._config.entities.map((e) => e.entity);
+    try {
+      const res = await this._hass.callWS({
+        type: "history/history_during_period", start_time: start.toISOString(), end_time: end.toISOString(),
+        entity_ids: ids, minimal_response: true, no_attributes: true, significant_changes_only: false,
+      });
+      const data = {};
+      for (const id of ids) {
+        const rows = res[id] || [];
+        const pts = [];
+        for (const r of rows) {
+          const t = r.lu !== undefined ? r.lu * 1000 : r.lc !== undefined ? r.lc * 1000 : Date.parse(r.last_updated || r.last_changed);
+          const v = parseFloat(r.s !== undefined ? r.s : r.state);
+          pts.push([t, Number.isFinite(v) ? v : null]);
+        }
+        data[id] = pts;
+      }
+      this._data = { start: start.getTime(), end: end.getTime(), series: data };
+      this._draw();
+    } catch (e) {
+      const m = this.shadowRoot.getElementById("msg");
+      if (m) { m.hidden = false; m.textContent = `History not available — ${e.message || e.code || e}`; }
+    } finally {
+      this._loading = false;
+    }
+  }
+
+  // average per time bucket; a gap keeps the last value (states only change when the value changes)
+  _bucket(pts, t0, t1, n) {
+    const out = new Array(n).fill(null), sum = new Array(n).fill(0), cnt = new Array(n).fill(0);
+    const w = (t1 - t0) / n;
+    let last = null, i = 0;
+    while (i < pts.length && pts[i][0] < t0) { last = pts[i][1]; i++; }
+    for (let b = 0; b < n; b++) {
+      const be = t0 + (b + 1) * w;
+      while (i < pts.length && pts[i][0] < be) { if (pts[i][1] !== null) { sum[b] += pts[i][1]; cnt[b]++; } last = pts[i][1]; i++; }
+      out[b] = cnt[b] ? sum[b] / cnt[b] : last;
+    }
+    return out;
+  }
+
+  _draw() {
+    const plot = this.shadowRoot && this.shadowRoot.getElementById("plot");
+    if (!plot || !this._data) return;
+    const W = Math.max(280, plot.clientWidth || 600), H = Number(this._config.height) || 220;
+    const padL = 44, padR = 10, padT = 8, padB = 22, iw = W - padL - padR, ih = H - padT - padB;
+    const N = Math.min(400, Math.max(60, Math.floor(iw / 2)));
+    const { start, end, series } = this._data;
+    const vis = this._config.entities.filter((e) => !this._hidden.has(e.entity));
+    const lines = vis.map((e) => {
+      const vals = this._bucket(series[e.entity] || [], start, end, N);
+      const nums = vals.filter((v) => v !== null);
+      let lo = nums.length ? Math.min(...nums) : 0, hi = nums.length ? Math.max(...nums) : 1;
+      if (hi - lo < 1e-9) { lo -= 1; hi += 1; }
+      const pad = (hi - lo) * 0.08; lo -= pad; hi += pad;
+      if (nums.length && Math.min(...nums) >= 0 && lo < 0) lo = 0;
+      return { e, vals, lo, hi };
+    });
+    const x = (b) => padL + (b / (N - 1)) * iw;
+    const y = (v, l) => padT + ih - ((v - l.lo) / (l.hi - l.lo)) * ih;
+    const path = (l) => {
+      let d = "", pen = false;
+      l.vals.forEach((v, b) => { if (v === null) { pen = false; return; } d += `${pen ? "L" : "M"}${x(b).toFixed(1)},${y(v, l).toFixed(1)}`; pen = true; });
+      return d;
+    };
+    // axis of the first visible line
+    const ax = lines[0];
+    let yTicks = "";
+    if (ax) {
+      for (let k = 0; k <= 4; k++) {
+        const v = ax.lo + ((ax.hi - ax.lo) * k) / 4, yy = y(v, ax);
+        yTicks += `<line x1="${padL}" x2="${W - padR}" y1="${yy}" y2="${yy}" class="grid"/><text x="${padL - 6}" y="${yy + 4}" class="yl" fill="${ax.e.color}">${this._fmt(v, ax.e)}</text>`;
+      }
+    }
+    // time labels
+    const span = end - start, step = this._hours <= 6 ? 3600e3 : this._hours <= 24 ? 4 * 3600e3 : this._hours <= 72 ? 12 * 3600e3 : 24 * 3600e3;
+    let xTicks = "";
+    const first = Math.ceil(start / step) * step;
+    for (let t = first; t < end; t += step) {
+      const xx = padL + ((t - start) / span) * iw, d = new Date(t);
+      const lbl = step >= 24 * 3600e3 || (d.getHours() === 0 && this._hours > 24)
+        ? d.toLocaleDateString(undefined, { day: "numeric", month: "short" })
+        : d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+      xTicks += `<line x1="${xx}" x2="${xx}" y1="${padT}" y2="${padT + ih}" class="grid v"/><text x="${xx}" y="${H - 6}" class="xl">${lbl}</text>`;
+    }
+    const svg = `
+      <svg viewBox="0 0 ${W} ${H}" width="100%" height="${H}" id="svg">
+        <defs>${lines.map((l, i) => `<linearGradient id="g${i}" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${l.e.color}" stop-opacity=".28"/><stop offset="1" stop-color="${l.e.color}" stop-opacity="0"/></linearGradient>`).join("")}</defs>
+        ${yTicks}${xTicks}
+        ${lines.map((l, i) => { const d = path(l); return d ? `${i === 0 ? `<path d="${d}L${x(N - 1)},${padT + ih}L${padL},${padT + ih}Z" fill="url(#g${i})" stroke="none"/>` : ""}<path d="${d}" class="ln" stroke="${l.e.color}"/>` : ""; }).join("")}
+        <line id="cur" x1="0" x2="0" y1="${padT}" y2="${padT + ih}" class="cur" visibility="hidden"/>
+        <rect x="${padL}" y="${padT}" width="${iw}" height="${ih}" fill="transparent" id="hit"/>
+      </svg>
+      <div class="tip" id="tip" hidden></div>
+      <div class="msg" id="msg" ${lines.some((l) => l.vals.some((v) => v !== null)) || !lines.length ? "hidden" : ""}>No history for this period</div>`;
+    plot.innerHTML = svg;
+    this._lines = lines;
+    const hit = plot.querySelector("#hit"), cur = plot.querySelector("#cur"), tip = plot.querySelector("#tip");
+    const move = (ev) => {
+      const r = plot.querySelector("#svg").getBoundingClientRect();
+      const px = ((ev.clientX - r.left) / r.width) * W;
+      const b = Math.max(0, Math.min(N - 1, Math.round(((px - padL) / iw) * (N - 1))));
+      const xx = x(b);
+      cur.setAttribute("x1", xx); cur.setAttribute("x2", xx); cur.setAttribute("visibility", "visible");
+      const t = new Date(start + (b / (N - 1)) * span);
+      tip.innerHTML = `<div class="tt">${t.toLocaleString(undefined, { weekday: "short", hour: "2-digit", minute: "2-digit" })}</div>` +
+        lines.map((l) => `<div><i style="background:${l.e.color}"></i>${this._esc(this._name(l.e))} <b>${this._fmt(l.vals[b], l.e)}</b> ${this._esc(this._unit(l.e))}</div>`).join("");
+      tip.hidden = false;
+      const left = (xx / W) * r.width;
+      tip.style.left = `${left > r.width / 2 ? left - tip.offsetWidth - 10 : left + 10}px`;
+    };
+    hit.addEventListener("mousemove", move);
+    hit.addEventListener("touchstart", (ev) => move(ev.touches[0]), { passive: true });
+    hit.addEventListener("touchmove", (ev) => move(ev.touches[0]), { passive: true });
+    const hide = () => { cur.setAttribute("visibility", "hidden"); tip.hidden = true; };
+    hit.addEventListener("mouseleave", hide);
+    hit.addEventListener("touchend", () => setTimeout(hide, 1500));
+    this._legend();
+  }
+
+  _legend() {
+    const el = this.shadowRoot && this.shadowRoot.getElementById("legend");
+    if (!el || !this._hass) return;
+    el.innerHTML = this._config.entities.map((e) => {
+      const st = this._hass.states[e.entity];
+      const v = st ? parseFloat(st.state) : NaN;
+      const line = (this._lines || []).find((l) => l.e.entity === e.entity);
+      const nums = line ? line.vals.filter((x) => x !== null) : [];
+      const mm = nums.length ? `<span class="mm">▲ ${this._fmt(Math.max(...nums), e)} ▼ ${this._fmt(Math.min(...nums), e)}</span>` : "";
+      return `<button class="li ${this._hidden.has(e.entity) ? "off" : ""}" data-e="${this._esc(e.entity)}">
+        <i style="background:${e.color}"></i><span class="ln2">${this._esc(this._name(e))}</span>
+        <b>${st ? this._fmt(v, e) : "—"}</b><small>${this._esc(this._unit(e))}</small>${mm}</button>`;
+    }).join("");
+    el.querySelectorAll(".li").forEach((b) => b.addEventListener("click", () => {
+      const id = b.dataset.e;
+      if (this._hidden.has(id)) this._hidden.delete(id); else this._hidden.add(id);
+      this._draw();
+    }));
+  }
+
+  _css() {
+    return `
+      ha-card, :host ha-card { background: linear-gradient(180deg, #2b2e33, #1e2024) !important; color: #e8edf3 !important; border-radius: var(--ha-card-border-radius, 14px);
+        padding: 14px; overflow: hidden; backdrop-filter: none !important; font-family: var(--paper-font-body1_-_font-family, "Roboto", system-ui, sans-serif); }
+      :host ha-card::before, :host ha-card::after { content: none !important; display: none !important; }
+      .head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,.1); }
+      .logo { height: 34px; }
+      .title { font-size: 17px; font-weight: 600; flex: 1; }
+      .ranges { display: flex; gap: 4px; }
+      .rb { font: inherit; font-size: 12px; font-weight: 700; color: #c8cfd8; background: #33373d; border: 0; border-radius: 7px; padding: 6px 9px; cursor: pointer; }
+      .rb.on { background: #1f9ad3; color: #fff; }
+      .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin: 10px 0 6px; }
+      .li { font: inherit; display: flex; align-items: baseline; gap: 6px; background: none; border: 0; color: #e8edf3; cursor: pointer; padding: 2px 0; }
+      .li i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; align-self: center; }
+      .li .ln2 { font-size: 13px; font-weight: 600; }
+      .li b { font-size: 14px; font-variant-numeric: tabular-nums; }
+      .li small { font-size: 10px; opacity: .7; }
+      .li .mm { font-size: 10px; opacity: .55; font-variant-numeric: tabular-nums; }
+      .li.off { opacity: .35; }
+      .li.off .ln2 { text-decoration: line-through; }
+      .plot { position: relative; min-height: 120px; }
+      .msg { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 13px; opacity: .7; }
+      .msg[hidden] { display: none; }
+      svg { display: block; overflow: visible; }
+      .grid { stroke: rgba(255,255,255,.07); stroke-dasharray: 3 4; }
+      .grid.v { stroke: rgba(255,255,255,.05); }
+      .yl { font-size: 10px; text-anchor: end; font-variant-numeric: tabular-nums; }
+      .xl { font-size: 10px; fill: #8a94a3; text-anchor: middle; }
+      .ln { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+      .cur { stroke: rgba(255,255,255,.5); stroke-width: 1; }
+      .tip { position: absolute; top: 6px; background: rgba(15,16,19,.95); border: 1px solid rgba(255,255,255,.12); border-radius: 8px; padding: 8px 10px;
+        font-size: 12px; pointer-events: none; white-space: nowrap; box-shadow: 0 4px 14px rgba(0,0,0,.4); }
+      .tip[hidden] { display: none; }
+      .tip .tt { font-weight: 700; margin-bottom: 4px; opacity: .8; }
+      .tip i { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+    `;
+  }
+}
+
+class HamletHistoryCardEditor extends HTMLElement {
+  setConfig(config) { this._config = { ...config }; this._render(); }
+  set hass(h) { this._hass = h; if (this._form) this._form.hass = h; else this._render(); }
+  _render() {
+    if (!this._hass || !this._config) return;
+    if (!this._form) {
+      this._form = document.createElement("ha-form");
+      this._form.computeLabel = (s) => ({ title: "Title", pump: "Pump (default values)", hours: "Default period",
+        entities: "Values to show (empty = the pump's power, pressure, amps, Hz, IGBT temp)", height: "Chart height (px)", logo: "Show Hamlet logo" }[s.name] || s.name);
+      this._form.addEventListener("value-changed", (ev) => {
+        const c = { ...ev.detail.value };
+        if (Array.isArray(c.entities) && !c.entities.length) delete c.entities;
+        this._config = c;
+        this.dispatchEvent(new CustomEvent("config-changed", { detail: { config: c }, bubbles: true, composed: true }));
+      });
+      this.appendChild(this._form);
+    }
+    this._form.hass = this._hass;
+    this._form.schema = [
+      { name: "title", selector: { text: {} } },
+      { name: "pump", selector: { select: { mode: "dropdown", options: [{ value: 1, label: "Pump 1 (vfd_ / pump_)" }, { value: 2, label: "Pump 2 (vfd2_ / pump2_)" }] } } },
+      { name: "hours", selector: { select: { mode: "dropdown", options: HH_RANGES.map((h) => ({ value: h, label: h < 24 ? `${h} hours` : `${h / 24} day${h > 24 ? "s" : ""}` })) } } },
+      { name: "entities", selector: { entity: { multiple: true, domain: "sensor" } } },
+      { name: "height", selector: { number: { min: 120, max: 600, step: 10, mode: "box" } } },
+      { name: "logo", selector: { boolean: {} } },
+    ];
+    const data = { ...this._config };
+    if (Array.isArray(data.entities)) data.entities = data.entities.map((e) => (typeof e === "string" ? e : e.entity));
+    this._form.data = data;
+  }
+}
+
+customElements.define("hamlet-history-card", HamletHistoryCard);
+customElements.define("hamlet-history-card-editor", HamletHistoryCardEditor);
+window.customCards = window.customCards || [];
+window.customCards.push({
+  type: "hamlet-history-card",
+  name: "Hamlet history (pump values over time)",
+  description: "Power, pressure, amps, Hz, temperature over 6 h – 7 days, each line on its own scale",
+  preview: true,
+});
+
 window.customCards = window.customCards || [];
 window.customCards.push({
   type: "hamlet-pump-house-card",
